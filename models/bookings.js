@@ -17,18 +17,23 @@ const userSchema = mongoose.Schema({
   status: { type: String, required: false },
   type: { type: String, required: false },
   // paymentStatus: { type: String, required: false },
-  // packagePricePerHead: { type: String, required: false },
-  // Amount: { type: String, required: false },
-  // gst: { type: String, required: false },
-  // discount: { type: String, required: false },
-  // totalAmount: { type: String, required: false },
-  // dropOf: { type: String, required: false },
-  // tripStartDate: { type: Date, required: false },
-  // tripEndDate: { type: Date, required: false },
   DateOfBooking: { type: Date, required: false },
-  // tripName: { type: String, required: false },
+
+  // ── Analytics-friendly typed fields (additive; populated going forward) ──
+  totalAmount: { type: Number, required: false },       // clean numeric amount
+  travelers: { type: Number, required: false },          // number of travellers
+  tripName: { type: String, required: false },           // denormalised for reporting
+  tripStartDate: { type: Date, required: false },
+  gst: { type: Number, required: false },
+  discount: { type: Number, required: false },
+  source: { type: String, required: false, default: "website" }, // attribution
+  bookingStatus: {
+    type: String,
+    enum: ["pending", "confirmed", "cancelled", "completed"],
+    default: "pending",
+  },
 
   payoutId: { type: mongoose.Schema.Types.ObjectId, ref: 'Payout', required: false },
-});
+}, { timestamps: true });
 
 export const Bookings = mongoose.model("Bookings", userSchema);

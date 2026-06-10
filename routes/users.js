@@ -21,7 +21,7 @@ import {
   awsSmsTesting,
   deleteUser,
 } from "../controllers/users.js";
-import { catchAsync } from "../middlewares/index.js";
+import { catchAsync, isAdmin } from "../middlewares/index.js";
 
 export const authRoutes = Router();
 
@@ -50,15 +50,15 @@ authRoutes.post(
 authRoutes.get("/forgotPassword/:email", catchAsync(forgetPassword));
 authRoutes.post("/changepassword", catchAsync(changePassword));
 
-// Get all Users
-authRoutes.get("/users", catchAsync(getAllUsers));
+// Get all Users — admin only (exposes PII)
+authRoutes.get("/users", isAdmin, catchAsync(getAllUsers));
 authRoutes.get("/user/:id", catchAsync(getUser));
 authRoutes.post("/editUser", catchAsync(editUser));
 authRoutes.post("/editinfluencer", catchAsync(editinfluencer));
 authRoutes.post("/updateBookmark", catchAsync(updateBookmark));
 authRoutes.post("/getBookmarkedTrips", catchAsync(getBookmarkedTrips));
 authRoutes.post("/awsSmsTesting", catchAsync(awsSmsTesting));
-authRoutes.post("/deleteUser", catchAsync(deleteUser));
+authRoutes.post("/deleteUser", isAdmin, catchAsync(deleteUser));
 authRoutes.post(
   "/getAllTripsWithUserBookmark",
   catchAsync(getAllTripsWithUserBookmark)

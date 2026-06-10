@@ -25,6 +25,6 @@ const userSchema = mongoose.Schema({
       },
     },
   ],
-});
+}, { timestamps: true });
 
 export const Enquire = mongoose.model("Enquire", userSchema);

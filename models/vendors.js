@@ -9,5 +9,5 @@ const vendorSchema = mongoose.Schema({
   Remarks: String,
 
   isLoggedIn: { type: Boolean, default: false },
-});
+}, { timestamps: true });
 export const Vendor = mongoose.model("Vendor", vendorSchema);

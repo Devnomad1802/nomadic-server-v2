@@ -22,6 +22,6 @@ const userSchema = mongoose.Schema({
   seoSlug: { type: String, required: false, default: "" },
   seoTitle: { type: String, required: false, default: "" },
   Date: { type: Date, required: false },
-});
+}, { timestamps: true });
 
 export const Blogs = mongoose.model("Blogs", userSchema);

@@ -37,6 +37,6 @@ const seoSchema = mongoose.Schema({
     keywords: { type: String, required: false },
     url: { type: String, required: false },
     image: { type: String, required: false },
-});
+}, { timestamps: true });
 
 export default mongoose.model("Seo", seoSchema);

@@ -45,6 +45,6 @@ const userSchema = mongoose.Schema({
   seoTitle: { type: String, required: false, default: "" },
   host: { type: mongoose.Schema.Types.ObjectId, ref: 'Host', required: false },
   // addsection: [{ type: String }],
-});
+}, { timestamps: true });
 
 export const Trips = mongoose.model("Trips", userSchema);

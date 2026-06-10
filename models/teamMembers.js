@@ -5,6 +5,6 @@ const userSchema = mongoose.Schema({
   Position: { type: String, required: false },
   Photo: { type: String, default: null },
   Date: { type: Date, required: false },
-});
+}, { timestamps: true });
 
 export const TeamMembers = mongoose.model("TeamMembers", userSchema);

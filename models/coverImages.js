@@ -12,6 +12,6 @@ const coverImageSchema = mongoose.Schema({
   homeLink: { type: String, required: false }, // Added homeLink field
   toggle: { type: Boolean, default: false }, // Added toggle field
   Date: { type: Date, default: Date.now },
-});
+}, { timestamps: true });
 
 export const CoverImages = mongoose.model("CoverImages", coverImageSchema);
