@@ -7,6 +7,6 @@ const userSchema = mongoose.Schema({
   Coupon_Name: { type: String, required: false },
   Coupon_percentage: { type: String, required: false },
   Date: { type: Date, required: false },
-}, { timestamps: true });
+});
 
 export const Coupon = mongoose.model("Coupon", userSchema);

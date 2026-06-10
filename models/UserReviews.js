@@ -10,6 +10,6 @@ const userReviewsSchema = mongoose.Schema({
     tripName: { type: String, default: "" },
     profileImage: { type: String, default: null },
     date: { type: Date, required: false },
-}, { timestamps: true });
+});
 
 export const UserReviews = mongoose.model("UserReviews", userReviewsSchema);

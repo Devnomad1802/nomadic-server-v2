@@ -24,7 +24,7 @@ userSchema.pre("save", function () {
     // Number use to convert string to a number because we store a BCRYPT_WORK_FACTOR string in .env file
     this.password = bcrypt.hashSync(this.password, Number(BCRYPT_WORK_FACTOR));
   }
-}, { timestamps: true });
+});
 
 userSchema.methods.matchesPassword = function (password) {
   return bcrypt.compareSync(password, this.password);

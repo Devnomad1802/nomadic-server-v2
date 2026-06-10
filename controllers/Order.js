@@ -46,6 +46,7 @@ export const order = async (req, res) => {
 };
 
 export const validate = async (req, res) => {
+  console.log("request body", req.body); s
   try {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } =
       req.body;

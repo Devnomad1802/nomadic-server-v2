@@ -10,6 +10,6 @@ const userSchema = mongoose.Schema({
   Date: { type: Date, required: false },
   status: { type: Boolean, required: false },
   userId: { type: String, required: false },
-}, { timestamps: true });
+});
 
 export const Reviews = mongoose.model("Reviews", userSchema);

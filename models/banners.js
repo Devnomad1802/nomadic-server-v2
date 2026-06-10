@@ -91,6 +91,6 @@ const bannerSchema = mongoose.Schema({
 bannerSchema.pre('save', function(next) {
   this.updatedAt = new Date();
   next();
-}, { timestamps: true });
+});
 
 export const Banners = mongoose.model("Banners", bannerSchema);

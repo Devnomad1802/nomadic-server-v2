@@ -5,6 +5,6 @@ const userSchema = mongoose.Schema({
   Starting_From: { type: String, required: false },
   Banner_Image: { type: String, default: null },
   Date: { type: Date, required: false },
-}, { timestamps: true });
+});
 
 export const Categories = mongoose.model("Categories", userSchema);
