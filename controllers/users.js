@@ -60,7 +60,6 @@ const twilioClient = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
 // Register
 export const register = async (req, res) => {
   const { name, email, phone, password, gender, role } = req.body;
-  console.log("register Data", name, email, phone, password, gender);
   if (![name, email, phone, password].every(Boolean))
     throw new BadRequest("Please fill all inputs!");
 
@@ -390,7 +389,6 @@ export const verifySMSCode = async (req, res) => {
 // User LogIn
 export const login = async (req, res) => {
   const { email, password } = req.body;
-  console.log("email, pasword", email, password);
   if (![email, password].every(Boolean))
     throw new BadRequest("Please fill all inputs!");
 
