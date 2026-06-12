@@ -5,7 +5,8 @@ on:
   workflow_dispatch:
 
 env:
-  IMAGE_NAME: docker.io/mudasar1234/nomadic-server  # full path, lowercase
+  # Uses your own Docker Hub account via the DOCKER_USER secret (no hardcoded name)
+  IMAGE_NAME: docker.io/${{ secrets.DOCKER_USER }}/nomadic-server
   RUNTIME_PORT: "5000"
   PUBLIC_PORT:  "80"
 

@@ -24,7 +24,7 @@ export const client = "https://nomadic-townies.netlify.app";
 export const sendVerificationMail = async (user) => {
   const verifyUrl = `${server}/verify-email?token=${user?.verificationToken}`;
   const mailOptions = {
-    from: "mudassarnetixsol@gmail.com",
+    from: `Nomadic Townies <${NODE_MAILER_USER}>`,
     to: user?.email,
     subject: "Verify Your Email Address",
     text: "Please Click The Below Link To Verify Your Email Address",
@@ -149,7 +149,7 @@ export const sendResetMail = async (user) => {
   console.log("reset email user......", user?.email);
 
   const mailOptions = {
-    from: "mudassarnetixsol@gmail.com",
+    from: `Nomadic Townies <${NODE_MAILER_USER}>`,
     to: user?.email,
     subject: "Verify Your Email Address",
     text: "Please Click The Below Link To Verify Your Email Address",
@@ -252,7 +252,7 @@ export const sendSecondaryVerificationMail = async (user, secondaryEmail) => {
 
   const msg = {
     to: secondaryEmail,
-    from: { name: "Template", email: "danish79786@gmail.com" }, // Use the email address or domain you verified above
+    from: { name: "Nomadic Townies", email: NODE_MAILER_USER },
     subject: "Verify Your Secondary Email Address",
     text: "Please Click The Below Link To Verify Your Secondary Email Address",
     html: `<!DOCTYPE html>

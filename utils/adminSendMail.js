@@ -23,7 +23,7 @@ export const admin = "https://nomadic-admin.netlify.app";
 export const sendVerificationMailAdmin = async (user) => {
   const verifyUrl = `${server}/verify-email-admin?token=${user?.verificationToken}`;
   const mailOptions = {
-    from: "mudassarnetixsol@gmail.com",
+    from: `Nomadic Townies <${NODE_MAILER_USER}>`,
     to: user?.email,
     subject: "Verify Your Email Address",
     text: "Please Click The Below Link To Verify Your Email Address",
@@ -145,7 +145,7 @@ export const sendResetMailAdmin = async (user) => {
 
   const msg = {
     to: user?.email,
-    from: { name: "Template", email: "danish79786@gmail.com" }, // Use the email address or domain you verified above
+    from: { name: "Nomadic Townies", email: NODE_MAILER_USER },
     subject: "Password Reset Request",
     text: "Please Click The Below Link To Verify Your Email Address",
     html: `<!DOCTYPE html>
@@ -239,7 +239,7 @@ export const sendSecondaryVerificationMailAdmin = async (
 
   const msg = {
     to: secondaryEmail,
-    from: { name: "Template", email: "danish79786@gmail.com" }, // Use the email address or domain you verified above
+    from: { name: "Nomadic Townies", email: NODE_MAILER_USER },
     subject: "Verify Your Secondary Email Address",
     text: "Please Click The Below Link To Verify Your Secondary Email Address",
     html: `<!DOCTYPE html>
