@@ -22,6 +22,7 @@ import HostRoutes from "./routes/hosts.js";
 import PayoutRoutes from "./routes/payouts.js";
 import UserReviewsRoutes from "./routes/UserReviews.js";
 import SeoRoutes from "./routes/Seo.js";
+import analyticsRoutes from "./routes/analytics.js";
 
 const app = express();
 const { PORT } = process.env;
@@ -59,6 +60,7 @@ app.use("/api/host", HostRoutes);
 app.use("/api/razorpay", PayoutRoutes);
 app.use("/api", UserReviewsRoutes);
 app.use("/api", SeoRoutes);
+app.use("/api/analytics", analyticsRoutes);
 
 
 app.get("/", (req, res) => {
