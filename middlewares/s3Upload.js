@@ -96,7 +96,7 @@ export const uploadToS3 = async (file, folder = "documents") => {
       Key: key,
       Body: file.buffer,
       ContentType: file.mimetype,
-      // ACL removed - bucket has ACLs disabled
+      ACL: "public-read",
     });
 
     await s3Client.send(command);
@@ -128,7 +128,7 @@ export const uploadLargeFileToS3 = async (file, folder = "documents") => {
       Bucket: aws_config.bucketName,
       Key: key,
       ContentType: file.mimetype,
-      // ACL removed - bucket has ACLs disabled
+      ACL: "public-read",
     });
 
     const { UploadId } = await s3Client.send(createCommand);

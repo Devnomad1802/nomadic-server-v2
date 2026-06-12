@@ -10,13 +10,14 @@ const transporter = nodemailer.createTransport({
   port: 587,
   secure: false, // Use `true` for port 465, `false` for all other ports
   auth: {
+
     user: NODE_MAILER_USER,
     pass: NODE_MAILER_PASSWORD,
   },
 });
 
 // export const server = "http://13.234.27.11:5000/api/auth";
-export const server = "https://api.nomadictownies.com/api/api/auth";
+export const server = "http://168.144.119.114:5000/api";
 
 export const admin = "https://nomadic-admin.netlify.app";
 

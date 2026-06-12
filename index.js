@@ -3,6 +3,7 @@ import bodyParser from "body-parser";
 import cors from "cors";
 import authRoutes from "./routes/users.js";
 import passport from "passport";
+import "./config/passport.js";
 import "dotenv/config";
 import { connectDB } from "./database/db.js";
 import { serverError, passportMiddleware } from "./middlewares/index.js";

@@ -18,6 +18,7 @@ const userSchema = mongoose.Schema({
   isLoggedIn: { type: Boolean, default: false },
   profileImage: String,
   bookmarks: [{ type: Sche.Types.ObjectId, ref: "Trips" }],
+  googleId: String,
 });
 userSchema.pre("save", function () {
   if (this.isModified("password")) {
