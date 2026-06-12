@@ -11,7 +11,7 @@ import {
   verifyOtp,
 } from "../middlewares/otpService.js";
 
-import { BadRequest, logIn, uploadFilesToS3, deleteMultipleFromS3 } from "../middlewares/index.js";
+import { BadRequest, CustomError, logIn, uploadFilesToS3, deleteMultipleFromS3 } from "../middlewares/index.js";
 import { User, Trips } from "../models/index.js";
 import {
   sendVerificationMail,
@@ -418,7 +418,7 @@ export const phoneLogin = async (req, res) => {
   }
   const user = await User.findOne({ phone: req.body.phone });
   if (!user) {
-    throw new NotFoundError("Phone number not found!"); // Throw error if number doesn't exist
+    throw new CustomError("Phone number not found!", 404); // Throw error if number doesn't exist
   }
   try {
     const otp = generateOtp();
