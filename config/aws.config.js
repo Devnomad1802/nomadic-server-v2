@@ -19,8 +19,9 @@ const s3Config = {
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
   },
   // Add configuration to handle redirects automatically
-  forcePathStyle: false,
-  followRegionRedirects: true,
+ endpoint: process.env.AWS_S3_ENDPOINT,
+ forcePathStyle: false,
+ followRegionRedirects: true,
 };
 // Create S3 client
 export const s3Client = new S3Client(s3Config);
@@ -43,9 +44,9 @@ export const S3_CONFIG = {
 
 // Helper function to generate S3 URL
 export const generateS3Url = (key) => {
-  return `https://${aws_config.bucketName}.s3.${aws_config.region}.amazonaws.com/${key}`;
+  return `https://${aws_config.bucketName}.${aws_config.region}.digitaloceanspaces.com/${key}`;
 };
 
 export const extractS3Key = (url) => {
-  return url.split("amazonaws.com/")[1];
+  return url.split("digitaloceanspaces.com/")[1];
 };

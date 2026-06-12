@@ -867,3 +867,47 @@ const getRedirectBodytwo = (message) => `
 
 
       `;
+
+// Google OAuth Callback
+export const googleCallback = async (req, res) => {
+  try {
+    const token = await logIn({ _id: req.user._id });
+    const clientUrl = 'https://nomadic-client-v2.vercel.app';
+    const userData = encodeURIComponent(JSON.stringify({
+      _id: req.user._id,
+      name: req.user.name,
+      email: req.user.email,
+      profileImage: req.user.profileImage
+    }));
+    res.redirect(clientUrl + '/auth/google/success?token=' + token + '&user=' + userData);
+  } catch (err) {
+    res.redirect('https://nomadic-client-v2.vercel.app?error=google_failed');
+  }
+};
+
+// Send Email OTP
+export const sendEmailOtpHandler = async (req, res) => {
+  const { email } = req.body;
+  if (!email) throw new BadRequest('Email is required');
+  const { generateEmailOtp, storeEmailOtp, sendEmailOtp } = await import('../services/emailOtpService.js');
+  const otp = generateEmailOtp();
+  storeEmailOtp(email, otp);
+  await sendEmailOtp(email, otp);
+  res.status(200).json({ success: true, message: 'OTP sent to your email' });
+};
+
+// Verify Email OTP
+export const verifyEmailOtpHandler = async (req, res) => {
+  const { email, otp } = req.body;
+  if (!email || !otp) throw new BadRequest('Email and OTP are required');
+  const { verifyEmailOtp } = await import('../services/emailOtpService.js');
+  const result = verifyEmailOtp(email, otp);
+  if (!result.valid) return res.status(400).json({ success: false, message: result.message });
+  let user = await User.findOne({ email });
+  const isNewUser = !user;
+  if (!user) {
+    user = await User.create({ email, isVerified: true, name: '', phone: '' });
+  }
+  const token = await logIn({ _id: user._id });
+  res.status(200).json({ success: true, token, user, isNewUser, message: 'Login successful' });
+};

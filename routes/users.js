@@ -1,5 +1,5 @@
 import { Router } from "express";
-import passport from "passport";
+import passportGoogle from "../config/passport.js";
 import {
   register,
   login,
@@ -20,6 +20,9 @@ import {
   getAllTripsWithUserBookmark,
   awsSmsTesting,
   deleteUser,
+  googleCallback,
+  sendEmailOtpHandler,
+  verifyEmailOtpHandler,
 } from "../controllers/users.js";
 import { catchAsync } from "../middlewares/index.js";
 
@@ -34,17 +37,17 @@ authRoutes.get("/verify-email", catchAsync(verifyEmail));
 authRoutes.get("/verify-email-admin", catchAsync(AdminverifyEmail));
 authRoutes.post(
   "/sendMail",
-  passport.authenticate("jwt", { session: false }),
+  passportGoogle.authenticate("jwt", { session: false }),
   catchAsync(sendMail)
 );
 // authRoutes.post(
 //   "/sendSmsCode",
-//   passport.authenticate("jwt", { session: false }),
+//   passportGoogle.authenticate("jwt", { session: false }),
 //   catchAsync(sendSMCode)
 // );
 authRoutes.post(
   "/verifySmsCode",
-  // passport.authenticate("jwt", { session: false }),
+  // passportGoogle.authenticate("jwt", { session: false }),
   catchAsync(verifySMSCode)
 );
 authRoutes.get("/forgotPassword/:email", catchAsync(forgetPassword));
@@ -63,5 +66,16 @@ authRoutes.post(
   "/getAllTripsWithUserBookmark",
   catchAsync(getAllTripsWithUserBookmark)
 );
+
+// Google OAuth
+authRoutes.get("/auth/google", passportGoogle.authenticate("google", { scope: ["profile", "email"] }));
+authRoutes.get("/auth/google/callback",
+  passportGoogle.authenticate("google", { session: false, failureRedirect: "/login" }),
+  catchAsync(googleCallback)
+);
+
+// Email OTP
+authRoutes.post("/send-email-otp", catchAsync(sendEmailOtpHandler));
+authRoutes.post("/verify-email-otp", catchAsync(verifyEmailOtpHandler));
 
 export default authRoutes;

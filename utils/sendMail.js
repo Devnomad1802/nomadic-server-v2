@@ -16,7 +16,7 @@ const transporter = nodemailer.createTransport({
 });
 
 // export const server = "http://localhost:5000/api/auth";
-export const server = "https://api.nomadictownies.com/api/api/auth";
+export const server = "http://168.144.119.114:5000/api";
 
 // export const client = "http://localhost:5174/";
 export const client = "https://nomadic-townies.netlify.app";
