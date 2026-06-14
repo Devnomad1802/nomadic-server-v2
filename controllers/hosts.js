@@ -83,6 +83,7 @@ export const createHost = async (req, res, next) => {
 
         // Specialties & Expertise
         specialties,
+        languages,
 
         // Trust & Service Quality
         isVerified,
@@ -271,6 +272,12 @@ export const createHost = async (req, res, next) => {
           ? specialties
           : specialties
           ? JSON.parse(specialties)
+          : [],
+        // Languages
+        languages: Array.isArray(languages)
+          ? languages
+          : languages
+          ? JSON.parse(languages)
           : [],
         // Files
         documents,
@@ -627,6 +634,14 @@ export const updateHost = async (req, res, next) => {
           updateData.achievements = updateData.achievements;
         } else if (typeof updateData.achievements === "string") {
           updateData.achievements = JSON.parse(updateData.achievements);
+        }
+      }
+
+      if (updateData.languages) {
+        if (Array.isArray(updateData.languages)) {
+          updateData.languages = updateData.languages;
+        } else if (typeof updateData.languages === "string") {
+          updateData.languages = JSON.parse(updateData.languages);
         }
       }
 

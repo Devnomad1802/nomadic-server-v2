@@ -42,6 +42,9 @@ const hostSchema = mongoose.Schema(
     // Specialties & Expertise - Array of strings
     specialties: [String],
 
+    // Languages the host speaks - Array of strings
+    languages: [String],
+
     // Trust & Service Quality
     isVerified: {
       type: Boolean,

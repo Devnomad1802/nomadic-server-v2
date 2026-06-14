@@ -42,6 +42,13 @@ export const newBooking = async (req, res) => {
       status: req.body.status,
       type: req.body.type,
       coupenDiscount: req.body.coupenDiscount,
+      // ── structured booking details (new booking flow; optional/back-compatible) ──
+      travellers: Array.isArray(req.body.travellers) ? req.body.travellers : undefined,
+      emergencyContact: req.body.emergencyContact || undefined,
+      dietary: req.body.dietary,
+      batchDate: req.body.batchDate,
+      roomType: req.body.roomType,
+      couponCode: req.body.couponCode,
       // paymentStatus: req.body.paymentStatus,
       // packagePricePerHead: req.body.packagePricePerHead,
       // Amount: req.body.Amount,

@@ -28,6 +28,28 @@ const userSchema = mongoose.Schema({
   DateOfBooking: { type: Date, required: false },
   // tripName: { type: String, required: false },
 
+  // ── Structured booking details (new booking flow) ──
+  travellers: [
+    {
+      name: { type: String, required: false },
+      age: { type: String, required: false },
+      gender: { type: String, required: false },
+      phone: { type: String, required: false },
+      email: { type: String, required: false },
+      city: { type: String, required: false },
+      isLead: { type: Boolean, default: false },
+    },
+  ],
+  emergencyContact: {
+    name: { type: String, required: false },
+    phone: { type: String, required: false },
+    relation: { type: String, required: false },
+  },
+  dietary: { type: String, required: false },
+  batchDate: { type: String, required: false },
+  roomType: { type: String, required: false },
+  couponCode: { type: String, required: false },
+
   payoutId: { type: mongoose.Schema.Types.ObjectId, ref: 'Payout', required: false },
 });
 
