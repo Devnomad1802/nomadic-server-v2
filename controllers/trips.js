@@ -125,6 +125,7 @@ export const AddTrip = async (req, res) => {
       Exclusion,
       ThingsToCarry,
       Cancellation,
+      highlights,
       discount,
       // gallaryImages,
       reviews,
@@ -201,6 +202,7 @@ export const AddTrip = async (req, res) => {
         Exclusion,
         ThingsToCarry,
         Cancellation,
+        highlights: Array.isArray(highlights) ? highlights : (highlights ? JSON.parse(highlights) : []),
         discount,
         gallaryImages, // Use galleryImages instead of gallaryImages
         reviews: normalizedReviews,
@@ -295,6 +297,7 @@ export const updateTrip = async (req, res) => {
       Exclusion,
       ThingsToCarry,
       Cancellation,
+      highlights,
       discount,
       reviews,
       ratings,
@@ -418,6 +421,9 @@ export const updateTrip = async (req, res) => {
       if (Exclusion) updateData.Exclusion = Exclusion;
       if (ThingsToCarry) updateData.ThingsToCarry = ThingsToCarry;
       if (Cancellation) updateData.Cancellation = Cancellation;
+      if (highlights !== undefined) {
+        updateData.highlights = Array.isArray(highlights) ? highlights : (highlights ? JSON.parse(highlights) : []);
+      }
       if (discount) updateData.discount = discount;
       // Parse and normalize ratings and reviews to prevent double stringification
       if (reviews !== undefined) updateData.reviews = parseArrayField(reviews);

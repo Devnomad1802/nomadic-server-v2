@@ -27,6 +27,7 @@ const userSchema = mongoose.Schema({
   Exclusion: { type: String, default: "" },
   ThingsToCarry: { type: String, default: "" },
   Cancellation: { type: String, default: "" },
+  highlights: [{ type: String }],
   discount: [{ type: String }],
   gallaryImages: [{ type: String }],
   reviews: [{ type: String }],
