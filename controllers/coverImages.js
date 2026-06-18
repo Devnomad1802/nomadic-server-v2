@@ -54,7 +54,7 @@ export const addCoverImage = async (req, res) => {
       }
 
       // Extract additional fields from request body
-      const { homeLink, toggle, existingHomeUrls } = req.body;
+      const { homeLink, toggle, existingHomeUrls, categorySectionTitle, categorySectionSubtitle } = req.body;
 
       // Parse existingHomeUrls if it's a JSON string
       let existingUrls = [];
@@ -126,6 +126,8 @@ export const addCoverImage = async (req, res) => {
           coverImage.aboutSection = aboutSection;
         if (homeLink !== undefined) coverImage.homeLink = homeLink;
         if (toggle !== undefined) coverImage.toggle = toggle;
+        if (categorySectionTitle !== undefined) coverImage.categorySectionTitle = categorySectionTitle;
+        if (categorySectionSubtitle !== undefined) coverImage.categorySectionSubtitle = categorySectionSubtitle;
 
         coverImage.Date = new Date();
 
@@ -146,6 +148,8 @@ export const addCoverImage = async (req, res) => {
           aboutSection,
           homeLink,
           toggle,
+          categorySectionTitle: categorySectionTitle || "",
+          categorySectionSubtitle: categorySectionSubtitle || "",
           Date: new Date(),
         });
 
@@ -205,6 +209,31 @@ export const getCoverImages = async (req, res) => {
     return res.status(500).json({ error: "Internal server error" });
   }
 };
+// Lightweight update for just the homepage category-section copy (no image flow).
+// Used by the admin Category page. Updates the single CoverImages doc.
+export const updateCategorySection = async (req, res) => {
+  try {
+    const { categorySectionTitle, categorySectionSubtitle } = req.body;
+    let coverImage = await CoverImages.findOne();
+    if (!coverImage) {
+      coverImage = new CoverImages({});
+    }
+    if (categorySectionTitle !== undefined) coverImage.categorySectionTitle = categorySectionTitle;
+    if (categorySectionSubtitle !== undefined) coverImage.categorySectionSubtitle = categorySectionSubtitle;
+    await coverImage.save();
+    return res.status(200).json({
+      message: "Category section updated successfully",
+      data: {
+        categorySectionTitle: coverImage.categorySectionTitle,
+        categorySectionSubtitle: coverImage.categorySectionSubtitle,
+      },
+    });
+  } catch (error) {
+    console.error("Error updating category section:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
+
 export const deleteCoverImage = async (req, res) => {
   try {
     // First find the cover image to get the file URLs

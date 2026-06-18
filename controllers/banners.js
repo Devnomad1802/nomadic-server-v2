@@ -70,15 +70,12 @@ export const addBanner = async (req, res) => {
       return res.status(500).json({ error: "Failed to upload files" });
     }
 
-    const { toggle, categorySectionTitle, categorySectionSubtitle } = req.body;
+    const { toggle } = req.body;
 
     try {
       // Initialize banner data structure
       const bannerData = {
         toggle: toggle === 'true' || toggle === true,
-        // Editable homepage "category section" copy (managed from admin)
-        categorySectionTitle: categorySectionTitle || "",
-        categorySectionSubtitle: categorySectionSubtitle || "",
         Date: new Date(),
         createdAt: new Date(),
         updatedAt: new Date()

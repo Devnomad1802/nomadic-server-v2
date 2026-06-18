@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { catchAsync } from "../middlewares/index.js";
-import { addCoverImage, getCoverImages } from "../controllers/coverImages.js";
+import { addCoverImage, getCoverImages, updateCategorySection } from "../controllers/coverImages.js";
 import passport from "passport";
 
 export const CoverImageRouts = Router();
@@ -8,6 +8,10 @@ CoverImageRouts.post(
   "/addCoverImage",
   // passport.authenticate("jwt", { session: false }),
   catchAsync(addCoverImage)
+);
+CoverImageRouts.post(
+  "/updateCategorySection",
+  catchAsync(updateCategorySection)
 );
 // CoverImageRouts.delete("/deleteBanner", catchAsync(deleteBanner));
 CoverImageRouts.get(

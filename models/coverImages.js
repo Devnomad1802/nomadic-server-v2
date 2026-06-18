@@ -11,6 +11,9 @@ const coverImageSchema = mongoose.Schema({
   aboutSection: { type: String, default: null },
   homeLink: { type: String, required: false }, // Added homeLink field
   toggle: { type: Boolean, default: false }, // Added toggle field
+  // Editable homepage "category section" copy (managed from admin Category page)
+  categorySectionTitle: { type: String, default: "" },
+  categorySectionSubtitle: { type: String, default: "" },
   Date: { type: Date, default: Date.now },
 });
 

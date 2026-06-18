@@ -76,10 +76,6 @@ const bannerSchema = mongoose.Schema({
   },
   toggle: { type: Boolean, default: true },
 
-  // Editable homepage "category section" copy (managed from admin)
-  categorySectionTitle: { type: String, default: "" },
-  categorySectionSubtitle: { type: String, default: "" },
-
   // Legacy fields for backward compatibility
   BannerType: { type: String, required: false },
   Banner_Image: { type: String, default: null },
