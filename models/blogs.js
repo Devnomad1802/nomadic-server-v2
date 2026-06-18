@@ -6,11 +6,14 @@ const itemSchema = {
   content: { type: String, required: false },
   imageIndex: { type: Number, required: false },
   imageUrl: { type: String, required: false },
+  caption: { type: String, required: false, default: "" }, // figcaption under image
 };
 
 const userSchema = mongoose.Schema({
   title: { type: String, required: false },
   author: { type: String, required: false },
+  authorRole: { type: String, required: false, default: "" }, // e.g. "Trip Lead · Hosting since 2021"
+  authorBio: { type: String, required: false, default: "" }, // author bio paragraph
   content1: { type: String, required: false }, // Keep for backward compatibility
   content2: { type: String, required: false }, // Keep for backward compatibility
   location: { type: String, required: false },

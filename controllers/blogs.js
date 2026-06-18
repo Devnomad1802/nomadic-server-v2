@@ -37,7 +37,7 @@ export const addBlog = async (req, res) => {
     }
 
     try {
-      const { title, location, author, content1, content2, items, content, metaDescription, seoSlug, seoTitle } = req.body;
+      const { title, location, author, authorRole, authorBio, content1, content2, items, content, metaDescription, seoSlug, seoTitle } = req.body;
 
       // Process Banner_Image
       let Banner_Image = null;
@@ -97,6 +97,7 @@ export const addBlog = async (req, res) => {
             } else {
               console.warn(`Image index ${imageIndex} not found in uploaded images`);
             }
+            if (item.caption !== undefined) processedItem.caption = item.caption;
           } else if (item.type === 'content' && item.content !== undefined) {
             processedItem.content = item.content;
           }
@@ -140,6 +141,8 @@ export const addBlog = async (req, res) => {
         images: uploadedImages, // New structured images array
         items: processedItems, // New structured items array
         author,
+        authorRole: authorRole !== undefined ? authorRole : "",
+        authorBio: authorBio !== undefined ? authorBio : "",
         content1, // Keep for backward compatibility
         content2, // Keep for backward compatibility
         metaDescription: metaDescription !== undefined ? metaDescription : "",
