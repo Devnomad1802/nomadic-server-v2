@@ -19,7 +19,10 @@ const cleanupUploadedFiles = async (req) => {
 };
 
 export const addCategories = async (req, res) => {
-  const fields = [{ name: "Banner_Image", maxCount: 1 }];
+  const fields = [
+    { name: "Banner_Image", maxCount: 1 },
+    { name: "Page_Banner_Image", maxCount: 1 },
+  ];
   uploadFilesToS3(fields)(req, res, async (err) => {
     if (err) {
       await cleanupUploadedFiles(req);
@@ -29,14 +32,19 @@ export const addCategories = async (req, res) => {
     try {
       // Process uploaded files from S3
       let Banner_Image = null;
-      
+      let Page_Banner_Image = null;
+
       if (req?.uploadedFiles?.Banner_Image && req?.uploadedFiles?.Banner_Image[0]) {
         Banner_Image = req.uploadedFiles.Banner_Image[0].url;
+      }
+      if (req?.uploadedFiles?.Page_Banner_Image && req?.uploadedFiles?.Page_Banner_Image[0]) {
+        Page_Banner_Image = req.uploadedFiles.Page_Banner_Image[0].url;
       }
       const addReview = new Categories({
         Category,
         Starting_From,
         Banner_Image,
+        Page_Banner_Image,
         Date: new Date(new Date().toUTCString()),
       });
 
@@ -68,8 +76,11 @@ export const getAllCategories = async (req, res) => {
   }
 };
 export const updateCategory = async (req, res) => {
-  const fields = [{ name: "Banner_Image", maxCount: 1 }];
-  
+  const fields = [
+    { name: "Banner_Image", maxCount: 1 },
+    { name: "Page_Banner_Image", maxCount: 1 },
+  ];
+
   uploadFilesToS3(fields)(req, res, async (err) => {
     if (err) {
       await cleanupUploadedFiles(req);
@@ -101,8 +112,20 @@ export const updateCategory = async (req, res) => {
           filesToDelete.push(existingCategory.Banner_Image);
         }
         updates.Banner_Image = req.uploadedFiles.Banner_Image[0].url;
-        
+
         // Delete old files after successful update
+        if (filesToDelete.length > 0) {
+          await deleteMultipleFromS3(filesToDelete);
+        }
+      }
+
+      // Handle Page_Banner_Image update if new file is uploaded
+      if (req?.uploadedFiles?.Page_Banner_Image && req.uploadedFiles.Page_Banner_Image[0]) {
+        const filesToDelete = [];
+        if (existingCategory.Page_Banner_Image) {
+          filesToDelete.push(existingCategory.Page_Banner_Image);
+        }
+        updates.Page_Banner_Image = req.uploadedFiles.Page_Banner_Image[0].url;
         if (filesToDelete.length > 0) {
           await deleteMultipleFromS3(filesToDelete);
         }
