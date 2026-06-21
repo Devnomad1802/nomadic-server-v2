@@ -76,6 +76,7 @@ export const createHost = async (req, res, next) => {
 
         // About
         hostOverview,
+        shortBio,
         foundedYear,
         experience,
         hqLocation,
@@ -245,6 +246,7 @@ export const createHost = async (req, res, next) => {
         coverImage: uploadedCoverImage || coverImage,
         // About
         hostOverview,
+        shortBio,
         foundedYear,
         experience,
         hqLocation,

@@ -32,6 +32,7 @@ const hostSchema = mongoose.Schema(
 
     // About
     hostOverview: String,
+    shortBio: String, // short card description for the Meet Our Hosts directory
     foundedYear: String,
     experience: String,
 
