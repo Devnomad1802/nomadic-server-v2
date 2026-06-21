@@ -89,6 +89,7 @@ export const createHost = async (req, res, next) => {
         // Trust & Service Quality
         isVerified,
         tripsHosted,
+        travellersHosted,
         successRate,
         responseTimeLabel,
 
@@ -258,6 +259,7 @@ export const createHost = async (req, res, next) => {
         // Trust & Service Quality
         isVerified,
         tripsHosted: Number(tripsHosted),
+        travellersHosted: Number(travellersHosted) || 0,
         successRate: Number(successRate),
         responseTimeLabel,
         // Contact

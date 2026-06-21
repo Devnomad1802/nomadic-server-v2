@@ -56,6 +56,10 @@ const hostSchema = mongoose.Schema(
       type: Number,
       default: 0,
     },
+    travellersHosted: {
+      type: Number,
+      default: 0,
+    },
     successRate: {
       type: Number,
       default: 0,
