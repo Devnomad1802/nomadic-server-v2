@@ -19,7 +19,8 @@ const transporter = nodemailer.createTransport({
 // export const server = "http://13.234.27.11:5000/api/auth";
 export const server = "http://168.144.119.114:5000/api";
 
-export const admin = "https://nomadic-admin.netlify.app";
+// Admin app base URL — prod default; override with ADMIN_URL env in dev
+export const admin = process.env.ADMIN_URL || "https://admin.nomadictownies.com";
 
 export const sendVerificationMailAdmin = async (user) => {
   const verifyUrl = `${server}/verify-email-admin?token=${user?.verificationToken}`;

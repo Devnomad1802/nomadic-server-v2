@@ -870,7 +870,7 @@ const getRedirectBodytwo = (message) => `
 export const googleCallback = async (req, res) => {
   try {
     const token = await logIn({ _id: req.user._id });
-    const clientUrl = 'https://nomadic-client-v2.vercel.app';
+    const clientUrl = process.env.CLIENT_URL || 'https://nomadictownies.com';
     const userData = encodeURIComponent(JSON.stringify({
       _id: req.user._id,
       name: req.user.name,
@@ -879,7 +879,8 @@ export const googleCallback = async (req, res) => {
     }));
     res.redirect(clientUrl + '/auth/google/success?token=' + token + '&user=' + userData);
   } catch (err) {
-    res.redirect('https://nomadic-client-v2.vercel.app?error=google_failed');
+    const clientUrl = process.env.CLIENT_URL || 'https://nomadictownies.com';
+    res.redirect(clientUrl + '?error=google_failed');
   }
 };
 
