@@ -18,8 +18,8 @@ const transporter = nodemailer.createTransport({
 // export const server = "http://localhost:5000/api/auth";
 export const server = "http://168.144.119.114:5000/api";
 
-// export const client = "http://localhost:5174/";
-export const client = "https://nomadic-townies.netlify.app";
+// Frontend base URL — prod default; override with CLIENT_URL env in dev (e.g. http://localhost:5174)
+export const client = process.env.CLIENT_URL || "https://nomadictownies.com";
 
 export const sendVerificationMail = async (user) => {
   const verifyUrl = `${server}/verify-email?token=${user?.verificationToken}`;
