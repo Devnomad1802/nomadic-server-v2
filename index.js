@@ -1,6 +1,9 @@
 import express from "express";
 import bodyParser from "body-parser";
 import cors from "cors";
+import helmet from "helmet";
+import mongoSanitize from "express-mongo-sanitize";
+import rateLimit from "express-rate-limit";
 import authRoutes from "./routes/users.js";
 import passport from "passport";
 import "./config/passport.js";
@@ -28,18 +31,41 @@ import analyticsRoutes from "./routes/analytics.js";
 const app = express();
 const { PORT } = process.env;
 
-// Increased limits to support large file uploads (videos up to 500MB)
-app.use(express.json({ limit: "500mb" }));
-app.use(express.urlencoded({ extended: true, limit: "500mb" }));
+// ── Security headers ──
+app.use(helmet({ crossOriginResourcePolicy: false }));
+
+// ── CORS allow-list (prod domains + Vercel previews + local dev) ──
+const corsAllow = (origin, cb) => {
+  if (!origin) return cb(null, true); // server-to-server / curl
+  const ok =
+    /(^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$)/.test(origin) ||
+    /\.nomadictownies\.com$/.test(origin) ||
+    /^https:\/\/nomadictownies\.com$/.test(origin) ||
+    /\.vercel\.app$/.test(origin);
+  return ok ? cb(null, true) : cb(new Error("Not allowed by CORS"));
+};
+app.use(cors({ origin: corsAllow, credentials: true }));
+
+// Body limits: generous for base64/image JSON, but not the old 500MB DoS surface.
+// Large binary uploads go through multer (multipart), unaffected by this limit.
+app.use(express.json({ limit: "25mb" }));
+app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 app.use(express.static("public"));
 
-app.use(cors());
+// ── NoSQL-injection sanitiser (strips $ and . from req body/params/query) ──
+app.use(mongoSanitize());
+
 app.use(passport.initialize());
 passportMiddleware(passport);
 
 //---------------serverFolder----------
 app.use("/uploads", express.static("uploads"));
 
+// ── Rate limiters on sensitive endpoints ──
+const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: true, legacyHeaders: false });
+const orderLimiter = rateLimit({ windowMs: 10 * 60 * 1000, limit: 40, standardHeaders: true, legacyHeaders: false });
+app.use("/api/auth", authLimiter);
+app.use(["/api/order", "/api/validate"], orderLimiter);
 
 //---------------- API ROUTES --------------------
 app.use("/api/auth", authRoutes);
