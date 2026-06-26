@@ -71,7 +71,7 @@ export const createSecureOrder = async (req, res) => {
     const { tripId, quantities, couponCode, batchIndex, paymentType } = req.body || {};
     if (!tripId) return res.status(400).json({ error: "tripId is required" });
 
-    const trip = await Trips.findById(tripId);
+    const trip = await Trips.findById(tripId).populate("host");
     if (!trip) return res.status(404).json({ error: "Trip not found" });
     if (trip.enableBooking === false) return res.status(400).json({ error: "Booking is disabled for this trip" });
 
@@ -114,6 +114,7 @@ export const createSecureOrder = async (req, res) => {
       gstTax: calc.gst,
       cardSectionData: calc.lineItems,
     };
+    const h = trip.host && typeof trip.host === "object" ? trip.host : null;
     const paymentDetail = {
       _id: `${trip._id}`,
       title: trip.title,
@@ -124,6 +125,16 @@ export const createSecureOrder = async (req, res) => {
       pickUp: trip.pickUp,
       dropOff: trip.dropOff,
       firstBookingPrice: trip.firstBookingPrice,
+      bannerImage: trip.bannerImage || trip.cardImage || null,
+      seoSlug: trip.seoSlug || "",
+      host: h
+        ? {
+            name: h.hostTitle || h.hostName || "",
+            location: h.hqLocation || h.location || "",
+            verified: !!h.isVerified,
+            logo: h.brandingLogo || null,
+          }
+        : null,
     };
 
     await Bookings.create({
