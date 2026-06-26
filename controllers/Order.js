@@ -90,7 +90,7 @@ export const createSecureOrder = async (req, res) => {
     const order = await razorpay.orders.create({
       amount: chargeNow * 100, // paise
       currency: "INR",
-      receipt: `trip_${tripId}_${Date.now()}`,
+      receipt: `rcpt_${Date.now()}`, // Razorpay limit: <= 40 chars
       notes: { tripId: `${tripId}`, userId: `${userId}` },
     });
     if (!order?.id) return res.status(502).json({ error: "Could not create payment order" });
