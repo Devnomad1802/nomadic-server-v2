@@ -50,7 +50,23 @@ const userSchema = mongoose.Schema({
   roomType: { type: String, required: false },
   couponCode: { type: String, required: false },
 
+  // ── Secure payment flow (C1/C2) — required for createSecureOrder/confirmBooking ──
+  razorpayOrderId: { type: String, required: false },
+  razorpayPaymentId: { type: String, required: false },
+  orderAmount: { type: Number, required: false },   // amount charged this transaction
+  fullTripAmount: { type: Number, required: false }, // full price of the trip
+  batchIndex: { type: Number, required: false },
+  travellersCount: { type: Number, required: false },
+  paymentType: { type: String, required: false },    // "full" | "firstPayment"
+
+  // ── Balance top-up (paying remaining of a firstPayment booking) ──
+  balanceOrderId: { type: String, required: false },
+  balanceAmount: { type: Number, required: false },
+
   payoutId: { type: mongoose.Schema.Types.ObjectId, ref: 'Payout', required: false },
 });
+
+userSchema.index({ razorpayOrderId: 1 }, { sparse: true });
+userSchema.index({ balanceOrderId: 1 }, { sparse: true });
 
 export const Bookings = mongoose.model("Bookings", userSchema);
