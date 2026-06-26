@@ -226,6 +226,115 @@ export const confirmBooking = async (req, res) => {
   }
 };
 
+// Recompute the full trip amount from the SERVER-stored booking snapshot
+// (never the client). Prefers fullTripAmount; else rebuilds from cardData.
+const fullAmountFromBooking = (booking) => {
+  if (Number(booking.fullTripAmount) > 0) return Math.round(Number(booking.fullTripAmount));
+  let card = {};
+  try { card = JSON.parse(booking.cardData || "{}"); } catch { card = {}; }
+  const items = Array.isArray(card?.cardSectionData) ? card.cardSectionData : [];
+  const base = items.reduce((s, it) => s + (parseInt(it.TitlePrice, 10) || 0) * (Number(it.quantity) || 0), 0);
+  const gst = Number(card?.gstTax) || 0;
+  const discount = Number(booking.coupenDiscount) || 0;
+  return Math.round(base - discount + gst);
+};
+
+// Balance step 1 — create a Razorpay order for the REMAINING balance of a
+// firstPayment booking. Server computes the remaining; client sends only the
+// booking id.
+export const createBalanceOrder = async (req, res) => {
+  try {
+    if (!RAZORPAY_KEY_ID || !RAZORPAY_KEY_SECRET) {
+      return res.status(500).json({ error: "Razorpay credentials not configured" });
+    }
+    const userId = req.user?._id;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const { bookingId } = req.body || {};
+    if (!bookingId) return res.status(400).json({ error: "bookingId is required" });
+
+    const booking = await Bookings.findById(bookingId);
+    if (!booking) return res.status(404).json({ error: "Booking not found" });
+    if (`${booking.userId}` !== `${userId}`) return res.status(403).json({ error: "Forbidden" });
+
+    const fullTotal = fullAmountFromBooking(booking);
+    const paid = Math.round(Number(booking.total) || 0);
+    const remaining = fullTotal - paid;
+    if (remaining <= 0) return res.status(400).json({ error: "No balance due on this booking" });
+
+    const razorpay = new Razorpay({ key_id: RAZORPAY_KEY_ID, key_secret: RAZORPAY_KEY_SECRET });
+    const order = await razorpay.orders.create({
+      amount: remaining * 100, // paise
+      currency: "INR",
+      receipt: `bal_${Date.now()}`, // <= 40 chars
+      notes: { bookingId: `${booking._id}`, userId: `${userId}` },
+    });
+    if (!order?.id) return res.status(502).json({ error: "Could not create payment order" });
+
+    booking.balanceOrderId = order.id;
+    booking.balanceAmount = remaining;
+    await booking.save();
+
+    return res.json({
+      orderId: order.id,
+      amount: remaining, // rupees (server-decided)
+      currency: "INR",
+      key: RAZORPAY_KEY_ID,
+      breakdown: { fullTotal, paid, remaining },
+    });
+  } catch (error) {
+    console.error("createBalanceOrder error:", error?.message || error);
+    return res.status(500).json({ error: "Could not start payment" });
+  }
+};
+
+// Balance step 2 — verify signature, then mark the booking fully paid + add the
+// balance to total. Idempotent on replay.
+export const confirmBalancePayment = async (req, res) => {
+  try {
+    const userId = req.user?._id;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    if (!RAZORPAY_KEY_SECRET) return res.status(500).json({ error: "Razorpay credentials not configured" });
+
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body || {};
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+      return res.status(400).json({ error: "Missing payment verification fields" });
+    }
+
+    const expected = crypto
+      .createHmac("sha256", RAZORPAY_KEY_SECRET)
+      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+      .digest("hex");
+    const okSig = expected.length === `${razorpay_signature}`.length &&
+      crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(`${razorpay_signature}`));
+    if (!okSig) return res.status(400).json({ error: "Payment signature verification failed" });
+
+    const booking = await Bookings.findOne({ balanceOrderId: razorpay_order_id });
+    if (!booking) return res.status(404).json({ error: "Order not found" });
+    if (`${booking.userId}` !== `${userId}`) return res.status(403).json({ error: "Forbidden" });
+
+    // Idempotency: already settled → return as-is, no double credit.
+    if (booking.paymentStatus === "fullPayment") {
+      return res.status(200).json({ message: "Already confirmed", data: booking });
+    }
+
+    const balance = Math.round(Number(booking.balanceAmount) || 0);
+    booking.total = Math.round(Number(booking.total) || 0) + balance;
+    booking.paymentStatus = "fullPayment";
+    booking.paymentType = "full";
+    booking.razorpayPaymentId = razorpay_payment_id;
+    booking.balanceOrderId = undefined;
+    booking.balanceAmount = undefined;
+    booking.DateOfBooking = new Date();
+    await booking.save();
+
+    return res.status(200).json({ message: "Balance paid — booking fully confirmed", data: booking });
+  } catch (error) {
+    console.error("confirmBalancePayment error:", error?.message || error);
+    return res.status(500).json({ error: "Could not confirm payment" });
+  }
+};
+
 export const order = async (req, res) => {
   try {
     // Validate Razorpay credentials
