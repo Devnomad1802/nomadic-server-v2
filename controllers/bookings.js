@@ -26,10 +26,24 @@ export const newBooking = async (req, res) => {
     //       ? "/uploads/" + req.files["Banner_Image"][0].filename
     //       : null;
     //   }
-    const user = await User.findOne({ _id: req.body.userId });
-    console.log("bookin id ........", req.body.bookingId);
+    // Always bind the booking to the authenticated user (never trust body userId).
+    const userId = req.user?._id;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    const user = req.user;
+
+    // Idempotency guard: the same Razorpay payment must not create two bookings
+    // (protects against double-submit / replay of the success handler).
+    if (req.body.bookingId) {
+      const existing = await Bookings.findOne({ bookingId: req.body.bookingId });
+      if (existing) {
+        return res
+          .status(200)
+          .json({ message: "Booking already recorded", data: existing });
+      }
+    }
+
     const newBooking = new Bookings({
-      userId: req.body.userId,
+      userId: `${userId}`,
       bookingId: req.body.bookingId,
       tripId: req.body.paymentDetail?._id,
       paymentStatus: req.body.paymentStatus,
@@ -77,7 +91,10 @@ export const newBooking = async (req, res) => {
 // ------------------------- get user bookings -------------------------
 export const getUserBooking = async (req, res) => {
   try {
-    const bookings = await Bookings.find({ userId: req.body.userId });
+    // Ownership: always scope to the authenticated user — never trust body userId.
+    const userId = req.user?._id;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    const bookings = await Bookings.find({ userId: `${userId}` });
 
     // Respond with the list of bookings
     return res
@@ -93,10 +110,14 @@ export const getUserBooking = async (req, res) => {
 // ------------------------- delete booking -------------------------
 export const deleteBooking = async (req, res) => {
   try {
-    const dbooking = await Bookings.findByIdAndDelete({ _id: req.body._id });
-    if (!dbooking) {
-      return res.status(400).send("NO DATA FOUND");
+    // Ownership: a user may only delete their own booking (admins may delete any).
+    const booking = await Bookings.findById(req.body._id);
+    if (!booking) return res.status(400).send("NO DATA FOUND");
+    const isOwner = `${booking.userId}` === `${req.user?._id}`;
+    if (!isOwner && req.user?.role !== "Admin") {
+      return res.status(403).json({ error: "Forbidden" });
     }
+    await booking.deleteOne();
     return res.status(200).send("DELETED");
   } catch (error) {
     console.error("Error adding trip:", error);
@@ -125,16 +146,13 @@ export const getBookingsByTripId = async (req, res) => {
 // ------------------------- get user bookings History -------------------------
 export const getUserHoistoryTripsBookings = async (req, res) => {
   try {
-    if (!req.body.userId) {
-      return res.status(400).json({
-        error: "User ID is required",
-        message: "Please provide userId in request body"
-      });
-    }
+    // Ownership: scope to the authenticated user — never trust body userId.
+    const userId = req.user?._id;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     // Get all bookings for the user (no filter)
     const bookings = await Bookings.find({
-      userId: req.body.userId,
+      userId: `${userId}`,
     }).sort({ DateOfBooking: -1 });
 
     if (!bookings || bookings.length === 0) {
@@ -204,9 +222,22 @@ export const getUserHoistoryTripsBookings = async (req, res) => {
 export const updateBooking = async (req, res) => {
   try {
     const ub = await Bookings.findOne({ _id: req.body._id });
-    ub.paymentStatus = req.body.paymentStatus;
-    ub.total = req.body.total;
-    ub.status = req.body.status;
+    if (!ub) return res.status(404).json({ error: "Booking not found" });
+
+    // Ownership: owner or admin only.
+    const isOwner = `${ub.userId}` === `${req.user?._id}`;
+    const isAdminUser = req.user?.role === "Admin";
+    if (!isOwner && !isAdminUser) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    // Money-integrity: only an admin may mutate financial fields. A customer
+    // must never be able to set their own paymentStatus/total.
+    if (isAdminUser) {
+      if (req.body.paymentStatus !== undefined) ub.paymentStatus = req.body.paymentStatus;
+      if (req.body.total !== undefined) ub.total = req.body.total;
+    }
+    if (req.body.status !== undefined) ub.status = req.body.status;
 
     await ub.save();
     return res
