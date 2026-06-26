@@ -326,6 +326,34 @@ export const confirmBalancePayment = async (req, res) => {
     booking.balanceOrderId = undefined;
     booking.balanceAmount = undefined;
     booking.DateOfBooking = new Date();
+
+    // Refresh the success-page snapshot from the current trip so even an OLD
+    // booking (made before host/banner existed) shows the full new page.
+    try {
+      const trip = await Trips.findById(booking.tripId).populate("host");
+      if (trip) {
+        let pd = {};
+        try { pd = JSON.parse(booking.paymentDetail || "{}"); } catch { pd = {}; }
+        const h = trip.host && typeof trip.host === "object" ? trip.host : null;
+        booking.paymentDetail = JSON.stringify({
+          ...pd,
+          _id: `${trip._id}`,
+          title: pd.title || trip.title,
+          location: pd.location || trip.location,
+          days: pd.days || trip.days,
+          nights: pd.nights || trip.nights,
+          price: pd.price || trip.price,
+          bannerImage: trip.bannerImage || trip.cardImage || pd.bannerImage || null,
+          seoSlug: trip.seoSlug || pd.seoSlug || "",
+          host: h
+            ? { name: h.hostTitle || h.hostName || "", location: h.hqLocation || h.location || "", verified: !!h.isVerified, logo: h.brandingLogo || null }
+            : (pd.host || null),
+        });
+      }
+    } catch (e) {
+      console.error("balance snapshot refresh failed:", e?.message || e);
+    }
+
     await booking.save();
 
     return res.status(200).json({ message: "Balance paid — booking fully confirmed", data: booking });
