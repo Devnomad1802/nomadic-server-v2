@@ -15,6 +15,7 @@ const hostSchema = mongoose.Schema(
       type: String,
       trim: true,
       unique: true,
+      sparse: true, // allow many hosts without a PAN (only enforce uniqueness when present)
     },
     gstNumber: String,
 
