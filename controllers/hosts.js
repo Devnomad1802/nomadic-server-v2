@@ -117,10 +117,13 @@ export const createHost = async (req, res, next) => {
         return next(new BadRequest(" hostName, emailAddress, phoneNumber, bankName, accountHolderName, accountNumber, ifscCode are required"));
       }
 
-      // Check if host already exists with same email or PAN
-      const existingHost = await Host.findOne({
-        $or: [{ emailAddress: emailAddress }, { panNumber: panNumber }],
-      });
+      // Check if host already exists with same email or PAN.
+      // Only match on fields that are actually provided — otherwise an empty
+      // PAN matches every PAN-less host and wrongly reports a duplicate.
+      const dupOr = [];
+      if (emailAddress) dupOr.push({ emailAddress });
+      if (panNumber) dupOr.push({ panNumber });
+      const existingHost = dupOr.length ? await Host.findOne({ $or: dupOr }) : null;
 
       if (existingHost) {
         // If host exists, clean up uploaded files
@@ -234,8 +237,8 @@ export const createHost = async (req, res, next) => {
         location,
         state,
         commissionRate,
-        panNumber,
-        gstNumber,
+        panNumber: panNumber || undefined, // avoid storing "" (breaks sparse unique index)
+        gstNumber: gstNumber || undefined,
         bankName,
         accountHolderName,
         accountNumber,
