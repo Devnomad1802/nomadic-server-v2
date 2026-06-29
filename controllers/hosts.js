@@ -95,6 +95,7 @@ export const createHost = async (req, res, next) => {
         responseTimeLabel,
         regionsHosted,
         faqs,
+        verificationBadges,
 
         // Contact
         phoneNumber,
@@ -275,6 +276,11 @@ export const createHost = async (req, res, next) => {
           ? JSON.parse(regionsHosted)
           : [],
         faqs: Array.isArray(faqs) ? faqs : faqs ? JSON.parse(faqs) : [],
+        verificationBadges: Array.isArray(verificationBadges)
+          ? verificationBadges
+          : verificationBadges
+          ? JSON.parse(verificationBadges)
+          : [],
         // Contact
         whatsapp,
         supportHours,
@@ -674,6 +680,10 @@ export const updateHost = async (req, res, next) => {
         updateData.faqs = JSON.parse(updateData.faqs);
       }
 
+      if (updateData.verificationBadges && typeof updateData.verificationBadges === "string") {
+        updateData.verificationBadges = JSON.parse(updateData.verificationBadges);
+      }
+
       if (
         updateData.socialMedia &&
         typeof updateData.socialMedia === "string"
@@ -1023,6 +1033,10 @@ export const updateHostPartial = async (req, res, next) => {
 
       if (fieldsToUpdate.faqs && typeof fieldsToUpdate.faqs === "string") {
         fieldsToUpdate.faqs = JSON.parse(fieldsToUpdate.faqs);
+      }
+
+      if (fieldsToUpdate.verificationBadges && typeof fieldsToUpdate.verificationBadges === "string") {
+        fieldsToUpdate.verificationBadges = JSON.parse(fieldsToUpdate.verificationBadges);
       }
 
       if (fieldsToUpdate.metaDescription) {

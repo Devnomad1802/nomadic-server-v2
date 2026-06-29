@@ -85,6 +85,18 @@ const hostSchema = mongoose.Schema(
       },
     ],
 
+    // Verification badges — admin-managed trust badges shown on the host
+    // detail page. `icon` is a keyword (verified, certificate, award, trophy,
+    // star, firstaid, mountain, camera, leaf, language, clock, shield). Falls
+    // back to badges derived from isVerified/achievements/successRate when empty.
+    verificationBadges: [
+      {
+        title: String,
+        subtitle: String,
+        icon: String,
+      },
+    ],
+
     // Contact
     phoneNumber: String,
     emailAddress: {
