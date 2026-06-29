@@ -6,8 +6,11 @@ export const addUserReview = async (req, res) => {
     try {
         const { userId, tripId, hostId, rating, review, name, tripName, date } = req.body;
 
-        // Validate required fields
-        if (!userId) {
+        // Validate required fields.
+        // Reviews may be submitted by guests (no auth) from the host detail
+        // page, so userId is optional — but a review must be tied to a host
+        // or a trip.
+        if (!hostId && !tripId) {
             // Clean up uploaded files if validation fails
             if (req.uploadedFiles) {
                 const filesToDelete = [];
@@ -20,7 +23,7 @@ export const addUserReview = async (req, res) => {
             }
             return res.status(400).json({
                 error: "Validation error",
-                message: "userId is required"
+                message: "hostId or tripId is required"
             });
         }
 

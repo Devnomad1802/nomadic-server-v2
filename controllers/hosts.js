@@ -94,6 +94,7 @@ export const createHost = async (req, res, next) => {
         responseRate,
         responseTimeLabel,
         regionsHosted,
+        faqs,
 
         // Contact
         phoneNumber,
@@ -273,6 +274,7 @@ export const createHost = async (req, res, next) => {
           : regionsHosted
           ? JSON.parse(regionsHosted)
           : [],
+        faqs: Array.isArray(faqs) ? faqs : faqs ? JSON.parse(faqs) : [],
         // Contact
         whatsapp,
         supportHours,
@@ -668,6 +670,10 @@ export const updateHost = async (req, res, next) => {
         }
       }
 
+      if (updateData.faqs && typeof updateData.faqs === "string") {
+        updateData.faqs = JSON.parse(updateData.faqs);
+      }
+
       if (
         updateData.socialMedia &&
         typeof updateData.socialMedia === "string"
@@ -1013,6 +1019,10 @@ export const updateHostPartial = async (req, res, next) => {
         } else if (typeof fieldsToUpdate.regionsHosted === "string") {
           fieldsToUpdate.regionsHosted = JSON.parse(fieldsToUpdate.regionsHosted);
         }
+      }
+
+      if (fieldsToUpdate.faqs && typeof fieldsToUpdate.faqs === "string") {
+        fieldsToUpdate.faqs = JSON.parse(fieldsToUpdate.faqs);
       }
 
       if (fieldsToUpdate.metaDescription) {

@@ -76,6 +76,15 @@ const hostSchema = mongoose.Schema(
     // Falls back to unique hosted-trip locations on the client when empty.
     regionsHosted: [String],
 
+    // "Ask the host" FAQ — admin-managed question/answer pairs shown on the
+    // host detail page. Falls back to generic defaults on the client when empty.
+    faqs: [
+      {
+        question: String,
+        answer: String,
+      },
+    ],
+
     // Contact
     phoneNumber: String,
     emailAddress: {
