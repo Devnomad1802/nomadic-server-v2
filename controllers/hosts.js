@@ -91,7 +91,9 @@ export const createHost = async (req, res, next) => {
         tripsHosted,
         travellersHosted,
         successRate,
+        responseRate,
         responseTimeLabel,
+        regionsHosted,
 
         // Contact
         phoneNumber,
@@ -264,7 +266,13 @@ export const createHost = async (req, res, next) => {
         tripsHosted: Number(tripsHosted),
         travellersHosted: Number(travellersHosted) || 0,
         successRate: Number(successRate),
+        responseRate: Number(responseRate) || 0,
         responseTimeLabel,
+        regionsHosted: Array.isArray(regionsHosted)
+          ? regionsHosted
+          : regionsHosted
+          ? JSON.parse(regionsHosted)
+          : [],
         // Contact
         whatsapp,
         supportHours,
@@ -652,6 +660,14 @@ export const updateHost = async (req, res, next) => {
         }
       }
 
+      if (updateData.regionsHosted) {
+        if (Array.isArray(updateData.regionsHosted)) {
+          updateData.regionsHosted = updateData.regionsHosted;
+        } else if (typeof updateData.regionsHosted === "string") {
+          updateData.regionsHosted = JSON.parse(updateData.regionsHosted);
+        }
+      }
+
       if (
         updateData.socialMedia &&
         typeof updateData.socialMedia === "string"
@@ -980,6 +996,22 @@ export const updateHostPartial = async (req, res, next) => {
           fieldsToUpdate.achievements = fieldsToUpdate.achievements;
         } else if (typeof fieldsToUpdate.achievements === "string") {
           fieldsToUpdate.achievements = JSON.parse(fieldsToUpdate.achievements);
+        }
+      }
+
+      if (fieldsToUpdate.languages) {
+        if (Array.isArray(fieldsToUpdate.languages)) {
+          fieldsToUpdate.languages = fieldsToUpdate.languages;
+        } else if (typeof fieldsToUpdate.languages === "string") {
+          fieldsToUpdate.languages = JSON.parse(fieldsToUpdate.languages);
+        }
+      }
+
+      if (fieldsToUpdate.regionsHosted) {
+        if (Array.isArray(fieldsToUpdate.regionsHosted)) {
+          fieldsToUpdate.regionsHosted = fieldsToUpdate.regionsHosted;
+        } else if (typeof fieldsToUpdate.regionsHosted === "string") {
+          fieldsToUpdate.regionsHosted = JSON.parse(fieldsToUpdate.regionsHosted);
         }
       }
 

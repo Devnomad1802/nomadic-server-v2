@@ -65,7 +65,16 @@ const hostSchema = mongoose.Schema(
       type: Number,
       default: 0,
     },
+    // % of traveller messages the host replies to (shown on the host detail page)
+    responseRate: {
+      type: Number,
+      default: 0,
+    },
     responseTimeLabel: String,
+
+    // Regions / destinations the host operates in (host detail page chips).
+    // Falls back to unique hosted-trip locations on the client when empty.
+    regionsHosted: [String],
 
     // Contact
     phoneNumber: String,
