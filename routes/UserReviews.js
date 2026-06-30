@@ -1,7 +1,7 @@
 // ------------------------- user review routes -------------------------
 import { Router } from "express";
 import { catchAsync, uploadCoverImagesToS3 } from "../middlewares/index.js";
-import { addUserReview, getUserReviews, getAllUsersReviews, getAllReviewsByHostId, getuserReviewsByTripId } from "../controllers/UserReviews.js";
+import { addUserReview, getUserReviews, getAllUsersReviews, getAllReviewsByHostId, getuserReviewsByTripId, deleteUserReview } from "../controllers/UserReviews.js";
 
 export const UserReviewsRoutes = Router();
 
@@ -30,5 +30,9 @@ UserReviewsRoutes.post("/getAllReviewsByHostId/:hostId", catchAsync(getAllReview
 UserReviewsRoutes.get("/getAllReviewsByHostId", catchAsync(getAllReviewsByHostId));
 UserReviewsRoutes.post("/getAllReviewsByHostId", catchAsync(getAllReviewsByHostId));
 UserReviewsRoutes.get("/getUserReviewsByHostId/:tripId", catchAsync(getuserReviewsByTripId));
+
+// Delete a review by id (admin host-review manager)
+UserReviewsRoutes.delete("/deleteUserReview/:id", catchAsync(deleteUserReview));
+UserReviewsRoutes.delete("/deleteUserReview", catchAsync(deleteUserReview));
 
 export default UserReviewsRoutes;

@@ -85,6 +85,12 @@ const hostSchema = mongoose.Schema(
       },
     ],
 
+    // Google reviews (manual-cached): the host's Google Business link/place id.
+    // Used as a reference when an admin adds the host's Google reviews; host
+    // reviews stay in the host-scoped UserReviews collection (never the brand).
+    googleReviewUrl: String,
+    googlePlaceId: String,
+
     // Verification badges — admin-managed trust badges shown on the host
     // detail page. `icon` is a keyword (verified, certificate, award, trophy,
     // star, firstaid, mountain, camera, leaf, language, clock, shield). Falls

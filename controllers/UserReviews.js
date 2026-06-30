@@ -4,7 +4,10 @@ import { deleteMultipleFromS3 } from "../middlewares/index.js";
 // ------------------------- add user review -------------------------
 export const addUserReview = async (req, res) => {
     try {
-        const { userId, tripId, hostId, rating, review, name, tripName, date } = req.body;
+        const {
+            userId, tripId, hostId, rating, review, name, tripName, date,
+            source, location, entityType, externalId, googleAuthorUrl,
+        } = req.body;
 
         // Validate required fields.
         // Reviews may be submitted by guests (no auth) from the host detail
@@ -61,6 +64,13 @@ export const addUserReview = async (req, res) => {
             profileImage = convertToImageString(req.body.profileImage);
         }
 
+        // Scope + provenance. entityType is host when a hostId is present,
+        // otherwise trip — so host and trip reviews never get confused.
+        const resolvedEntityType =
+            entityType || (hostId ? "host" : tripId ? "trip" : undefined);
+        const allowedSources = ["traveller", "manual", "google"];
+        const resolvedSource = allowedSources.includes(source) ? source : "traveller";
+
         // Create new user review
         const newUserReview = new UserReviews({
             userId,
@@ -72,6 +82,11 @@ export const addUserReview = async (req, res) => {
             tripName: tripName || "",
             profileImage: profileImage,
             date: date ? new Date(date) : new Date(),
+            entityType: resolvedEntityType,
+            source: resolvedSource,
+            location: location || "",
+            externalId: externalId || null,
+            googleAuthorUrl: googleAuthorUrl || null,
         });
 
         await newUserReview.save();
@@ -262,3 +277,36 @@ export const getuserReviewsByTripId = async (req, res) => {
         });
     }
 };   
+// ------------------------- delete user review (admin) -------------------------
+// Removes a single review by its _id. Used by the admin host-review manager.
+export const deleteUserReview = async (req, res) => {
+    try {
+        const id = req.params.id || req.body.id || req.body._id;
+        if (!id) {
+            return res.status(400).json({
+                error: "Validation error",
+                message: "review id is required",
+            });
+        }
+
+        const deleted = await UserReviews.findByIdAndDelete(id);
+        if (!deleted) {
+            return res.status(404).json({
+                error: "Not found",
+                message: "Review not found",
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Review deleted successfully",
+            data: deleted,
+        });
+    } catch (error) {
+        console.error("Error deleting user review:", error);
+        return res.status(500).json({
+            error: "Internal server error",
+            message: error.message,
+        });
+    }
+};

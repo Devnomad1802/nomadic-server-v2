@@ -96,6 +96,8 @@ export const createHost = async (req, res, next) => {
         regionsHosted,
         faqs,
         verificationBadges,
+        googleReviewUrl,
+        googlePlaceId,
 
         // Contact
         phoneNumber,
@@ -281,6 +283,8 @@ export const createHost = async (req, res, next) => {
           : verificationBadges
           ? JSON.parse(verificationBadges)
           : [],
+        googleReviewUrl,
+        googlePlaceId,
         // Contact
         whatsapp,
         supportHours,
