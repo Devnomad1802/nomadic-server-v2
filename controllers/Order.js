@@ -2,7 +2,7 @@ import "dotenv/config";
 import Razorpay from "razorpay";
 import crypto from "crypto";
 import { BadRequest, CustomError } from "../middlewares/index.js";
-import { Bookings, Trips } from "../models/index.js";
+import { Bookings, Trips, User } from "../models/index.js";
 
 const { RAZORPAY_KEY_SECRET, RAZORPAY_KEY_ID } = process.env;
 
@@ -238,12 +238,16 @@ export const confirmBooking = async (req, res) => {
       const lead = Array.isArray(booking.travellers)
         ? booking.travellers.find((t) => t?.isLead) || booking.travellers[0]
         : null;
-      const recipient = lead?.email || booking.email;
+      // The secure confirm flow doesn't post traveller details and the booking
+      // has no stored email, so fall back to the buyer's account email — this is
+      // why confirmations were never delivered.
+      const buyer = await User.findById(booking.userId).select("name email").lean();
+      const recipient = lead?.email || booking.email || buyer?.email;
       const paidNow = Number(booking.orderAmount) || 0;
       const fullAmt = Number(booking.fullTripAmount) || 0;
       const remaining = booking.paymentType === "firstPayment" ? Math.max(0, fullAmt - paidNow) : 0;
       await sendBookingConfirmationEmail(recipient, {
-        customer_name: lead?.name || booking.userName || "",
+        customer_name: lead?.name || booking.userName || buyer?.name || "",
         booking_id: booking.bookingId || String(booking._id),
         trip_name: tripDoc?.title || "",
         host_name: tripDoc?.host?.hostTitle || tripDoc?.host?.hostName || "",
@@ -408,9 +412,13 @@ export const confirmBalancePayment = async (req, res) => {
       const lead = Array.isArray(booking.travellers)
         ? booking.travellers.find((t) => t?.isLead) || booking.travellers[0]
         : null;
-      const recipient = lead?.email || booking.email;
+      // The secure confirm flow doesn't post traveller details and the booking
+      // has no stored email, so fall back to the buyer's account email — this is
+      // why confirmations were never delivered.
+      const buyer = await User.findById(booking.userId).select("name email").lean();
+      const recipient = lead?.email || booking.email || buyer?.email;
       await sendBookingConfirmationEmail(recipient, {
-        customer_name: lead?.name || booking.userName || "",
+        customer_name: lead?.name || booking.userName || buyer?.name || "",
         booking_id: booking.bookingId || String(booking._id),
         trip_name: tripDoc?.title || "",
         host_name: tripDoc?.host?.hostTitle || tripDoc?.host?.hostName || "",

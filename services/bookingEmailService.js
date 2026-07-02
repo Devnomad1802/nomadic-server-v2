@@ -216,13 +216,26 @@ export const buildBookingConfirmationHtml = (data = {}) => {
  */
 export const sendBookingConfirmationEmail = async (to, data = {}) => {
   try {
-    if (!to) return false;
-    await resend.emails.send({
-      from: "Nomadic Townies <noreply@nomadictownies.com>",
+    if (!to) {
+      console.warn("sendBookingConfirmationEmail skipped — no recipient email", { booking_id: data?.booking_id });
+      return false;
+    }
+    if (!process.env.RESEND_API_KEY) {
+      console.error("sendBookingConfirmationEmail skipped — RESEND_API_KEY not configured");
+      return false;
+    }
+    const { data: sent, error } = await resend.emails.send({
+      from: process.env.MAIL_FROM || "Nomadic Townies <noreply@nomadictownies.com>",
       to,
       subject: `You're booked! ${data.trip_name || "Your experience"}${data.booking_id ? ` · ${data.booking_id}` : ""}`,
       html: buildBookingConfirmationHtml(data),
     });
+    // Resend resolves (does not throw) on API errors — inspect the payload.
+    if (error) {
+      console.error("sendBookingConfirmationEmail Resend error:", error?.message || error);
+      return false;
+    }
+    console.log("sendBookingConfirmationEmail sent to", to, "id:", sent?.id);
     return true;
   } catch (err) {
     console.error("sendBookingConfirmationEmail failed:", err?.message || err);
