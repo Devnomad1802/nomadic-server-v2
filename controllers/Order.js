@@ -2,7 +2,7 @@ import "dotenv/config";
 import Razorpay from "razorpay";
 import crypto from "crypto";
 import { BadRequest, CustomError } from "../middlewares/index.js";
-import { Bookings, Trips } from "../models/index.js";
+import { Bookings, Trips, User } from "../models/index.js";
 
 const { RAZORPAY_KEY_SECRET, RAZORPAY_KEY_ID } = process.env;
 
@@ -238,7 +238,14 @@ export const confirmBooking = async (req, res) => {
       const lead = Array.isArray(booking.travellers)
         ? booking.travellers.find((t) => t?.isLead) || booking.travellers[0]
         : null;
-      const recipient = lead?.email || booking.email;
+      let recipient = lead?.email || booking.email;
+      if (!recipient && booking.userId) {
+        // Bookings created via the secure flow don't store an email, and the
+        // confirm payload may omit traveller emails — fall back to the
+        // authenticated user's account email so the confirmation always sends.
+        const acct = await User.findById(booking.userId).select("email").lean();
+        recipient = acct?.email;
+      }
       const paidNow = Number(booking.orderAmount) || 0;
       const fullAmt = Number(booking.fullTripAmount) || 0;
       const remaining = booking.paymentType === "firstPayment" ? Math.max(0, fullAmt - paidNow) : 0;
@@ -408,7 +415,14 @@ export const confirmBalancePayment = async (req, res) => {
       const lead = Array.isArray(booking.travellers)
         ? booking.travellers.find((t) => t?.isLead) || booking.travellers[0]
         : null;
-      const recipient = lead?.email || booking.email;
+      let recipient = lead?.email || booking.email;
+      if (!recipient && booking.userId) {
+        // Bookings created via the secure flow don't store an email, and the
+        // confirm payload may omit traveller emails — fall back to the
+        // authenticated user's account email so the confirmation always sends.
+        const acct = await User.findById(booking.userId).select("email").lean();
+        recipient = acct?.email;
+      }
       await sendBookingConfirmationEmail(recipient, {
         customer_name: lead?.name || booking.userName || "",
         booking_id: booking.bookingId || String(booking._id),

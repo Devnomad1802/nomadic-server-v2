@@ -216,13 +216,27 @@ export const buildBookingConfirmationHtml = (data = {}) => {
  */
 export const sendBookingConfirmationEmail = async (to, data = {}) => {
   try {
-    if (!to) return false;
-    await resend.emails.send({
+    if (!to || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(to).trim())) {
+      console.error(`sendBookingConfirmationEmail: no valid recipient (booking ${data.booking_id || "?"}) — skipped`);
+      return false;
+    }
+    if (!process.env.RESEND_API_KEY) {
+      console.error("sendBookingConfirmationEmail: RESEND_API_KEY is not set — skipped");
+      return false;
+    }
+    // Resend returns { data, error } and does NOT throw on API-level errors
+    // (e.g. unverified sender domain, blocked recipient) — inspect error.
+    const { data: res, error } = await resend.emails.send({
       from: "Nomadic Townies <noreply@nomadictownies.com>",
-      to,
+      to: String(to).trim(),
       subject: `You're booked! ${data.trip_name || "Your experience"}${data.booking_id ? ` · ${data.booking_id}` : ""}`,
       html: buildBookingConfirmationHtml(data),
     });
+    if (error) {
+      console.error(`sendBookingConfirmationEmail: Resend rejected (booking ${data.booking_id || "?"}):`, error?.message || JSON.stringify(error));
+      return false;
+    }
+    console.log(`Booking confirmation email sent (booking ${data.booking_id || "?"}, id ${res?.id || "n/a"})`);
     return true;
   } catch (err) {
     console.error("sendBookingConfirmationEmail failed:", err?.message || err);
