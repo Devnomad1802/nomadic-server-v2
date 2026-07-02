@@ -230,6 +230,40 @@ export const confirmBooking = async (req, res) => {
     booking.DateOfBooking = new Date();
     await booking.save();
 
+    // Send the booking confirmation email (best-effort — never blocks the
+    // response or breaks the booking/payment flow).
+    try {
+      const { sendBookingConfirmationEmail, SUPPORT_EMAIL } = await import("../services/bookingEmailService.js");
+      const tripDoc = await Trips.findById(booking.tripId).populate("host").lean();
+      const lead = Array.isArray(booking.travellers)
+        ? booking.travellers.find((t) => t?.isLead) || booking.travellers[0]
+        : null;
+      const recipient = lead?.email || booking.email;
+      const paidNow = Number(booking.orderAmount) || 0;
+      const fullAmt = Number(booking.fullTripAmount) || 0;
+      const remaining = booking.paymentType === "firstPayment" ? Math.max(0, fullAmt - paidNow) : 0;
+      await sendBookingConfirmationEmail(recipient, {
+        customer_name: lead?.name || booking.userName || "",
+        booking_id: booking.bookingId || String(booking._id),
+        trip_name: tripDoc?.title || "",
+        host_name: tripDoc?.host?.hostTitle || tripDoc?.host?.hostName || "",
+        batch_date: booking.batchDate || "",
+        traveller_count: booking.travellersCount || (Array.isArray(booking.travellers) ? booking.travellers.length : 1),
+        booking_date: booking.DateOfBooking
+          ? new Date(booking.DateOfBooking).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+          : "",
+        booking_status: remaining > 0 ? "Confirmed (deposit paid)" : "Confirmed",
+        amount_paid: paidNow,
+        remaining_amount: remaining,
+        payment_status: booking.paymentType === "firstPayment" ? "Partially paid" : "Fully paid",
+        transaction_id: booking.razorpayPaymentId || "",
+        support_email: SUPPORT_EMAIL,
+        view_booking_url: `${process.env.CLIENT_URL || "https://nomadictownies.com"}/profile`,
+      });
+    } catch (mailErr) {
+      console.error("booking confirmation email error:", mailErr?.message || mailErr);
+    }
+
     return res.status(200).json({ message: "Booking confirmed", data: booking });
   } catch (error) {
     console.error("confirmBooking error:", error?.message || error);
