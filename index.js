@@ -29,6 +29,10 @@ import SeoRoutes from "./routes/Seo.js";
 import analyticsRoutes from "./routes/analytics.js";
 
 const app = express();
+// Behind nginx (single proxy hop): trust the first X-Forwarded-For entry so
+// express-rate-limit sees the real client IP and stops throwing
+// ERR_ERL_UNEXPECTED_X_FORWARDED_FOR.
+app.set("trust proxy", 1);
 const { PORT } = process.env;
 
 // ── Security headers ──
