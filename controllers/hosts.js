@@ -267,9 +267,9 @@ export const createHost = async (req, res, next) => {
           : [],
         // Trust & Service Quality
         isVerified,
-        tripsHosted: Number(tripsHosted),
+        tripsHosted: Number(tripsHosted) || 0,
         travellersHosted: Number(travellersHosted) || 0,
-        successRate: Number(successRate),
+        successRate: Number(successRate) || 0,
         responseRate: Number(responseRate) || 0,
         responseTimeLabel,
         regionsHosted: Array.isArray(regionsHosted)
