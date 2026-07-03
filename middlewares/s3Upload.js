@@ -308,7 +308,11 @@ export const uploadFilesToS3 = (fields) => {
         next();
       } catch (uploadError) {
         console.error("S3 upload error:", uploadError);
-        return res.status(500).json({ error: "Failed to upload files to S3" });
+        return res.status(500).json({
+          error: "Failed to upload files to S3",
+          detail: uploadError?.message || String(uploadError),
+          code: uploadError?.Code || uploadError?.code || uploadError?.name,
+        });
       }
     });
   };
@@ -563,7 +567,11 @@ export const uploadCoverImagesToS3 = (fields) => {
         next();
       } catch (uploadError) {
         console.error("S3 upload error:", uploadError);
-        return res.status(500).json({ error: "Failed to upload files to S3" });
+        return res.status(500).json({
+          error: "Failed to upload files to S3",
+          detail: uploadError?.message || String(uploadError),
+          code: uploadError?.Code || uploadError?.code || uploadError?.name,
+        });
       }
     });
   };
