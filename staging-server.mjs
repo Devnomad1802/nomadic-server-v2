@@ -118,6 +118,15 @@ await Trips.create([
   },
 ]);
 
+// --- unactivated host application (Phase C activation testing) ---
+await new Host({
+  hostName: "Coastal Escapes",
+  hostTitle: "Coastal Escapes Co",
+  emailAddress: "host@coastalescapes.in",
+  panNumber: "PQRST5555Z",
+  status: "pending",
+}).save();
+
 // --- bookings + a linked enquiry on Desert Trails' first trip ---
 const dtTrips = await Trips.find({ host: host._id });
 await Bookings.create([

@@ -1,4 +1,7 @@
+import crypto from "crypto";
+import { Resend } from "resend";
 import { Host } from "../models/hosts.js";
+import { User } from "../models/user.js";
 import { Trips } from "../models/trips.js";
 import { Bookings } from "../models/bookings.js";
 import { Enquire } from "../models/enquire.js";
@@ -82,6 +85,95 @@ export const getMyEnquiries = async (req, res) => {
   if (!host) return;
   const enquiries = await Enquire.find({ hostId: String(host._id) }).sort({ Date: -1 });
   return res.status(200).json({ success: true, data: enquiries });
+};
+
+/* ------------------------------------------------------------------
+ * POST /host-portal/activate/:hostId  (ADMIN ONLY)
+ * Approval → account creation: creates (or links) the host's login User,
+ * marks the host approved+verified, and emails credentials. Additive —
+ * the existing PATCH /host/:id/status flow is unchanged.
+ * ------------------------------------------------------------------ */
+export const activateHost = async (req, res) => {
+  if (String(req.user?.role).toLowerCase() !== "admin") {
+    return res.status(403).json({ success: false, message: "Admin only." });
+  }
+
+  const host = await Host.findById(req.params.hostId);
+  if (!host) {
+    return res.status(404).json({ success: false, message: "Host not found" });
+  }
+  if (host.user) {
+    return res.status(409).json({ success: false, message: "Host already has a linked login account." });
+  }
+  if (!host.emailAddress) {
+    return res.status(400).json({ success: false, message: "Host has no email address." });
+  }
+
+  // Link an existing User with this email, or create a fresh one.
+  let user = await User.findOne({
+    email: { $regex: `^${host.emailAddress}$`, $options: "i" },
+  });
+  let tempPassword = null;
+
+  if (user) {
+    if (String(user.role).toLowerCase() !== "admin") {
+      user.role = "Host";
+      await user.save();
+    }
+  } else {
+    tempPassword = crypto.randomBytes(9).toString("base64url"); // ~12 chars
+    user = await new User({
+      name: host.hostTitle || host.hostName || "Host",
+      email: host.emailAddress,
+      password: tempPassword, // hashed by the User pre-save hook
+      role: "Host",
+      isVerified: true,
+    }).save();
+  }
+
+  host.user = user._id;
+  host.status = "approved";
+  host.isVerified = true;
+  await host.save();
+
+  // Email credentials / welcome. Failure is non-fatal: the admin gets the
+  // temp password back in the response to share manually.
+  let emailSent = false;
+  try {
+    const resend = new Resend(process.env.RESEND_API_KEY);
+    const sent = await resend.emails.send({
+      from: "Nomadic Townies <noreply@nomadictownies.com>",
+      to: host.emailAddress,
+      subject: "Your Nomadic Townies Host Dashboard is ready",
+      html: `
+        <p>Hi ${host.hostTitle || host.hostName},</p>
+        <p>Your host application has been approved. You can now sign in to your Host Dashboard.</p>
+        <p><b>Email:</b> ${host.emailAddress}<br/>
+        ${tempPassword ? `<b>Temporary password:</b> ${tempPassword}<br/>` : "Use your existing account password.<br/>"}
+        </p>
+        <p>Please change your password after your first login.</p>
+        <p>— Nomadic Townies</p>`,
+    });
+    // Resend v1 returns { data, error } rather than throwing.
+    if (sent?.error) throw new Error(sent.error.message || "Resend error");
+    emailSent = true;
+  } catch (e) {
+    console.error("activateHost: credential email failed:", e?.message);
+  }
+
+  return res.status(200).json({
+    success: true,
+    message: `Host activated${emailSent ? " and credentials emailed" : " (email failed — share credentials manually)"}.`,
+    data: {
+      hostId: host._id,
+      userId: user._id,
+      email: host.emailAddress,
+      emailSent,
+      // Only returned when a new account was created AND the email failed,
+      // so the admin can pass credentials on manually.
+      ...(tempPassword && !emailSent ? { tempPassword } : {}),
+    },
+  });
 };
 
 // GET /host-portal/me/overview — KPI aggregate for the dashboard.
