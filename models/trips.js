@@ -45,6 +45,8 @@ const userSchema = mongoose.Schema({
   seoSlug: { type: String, required: false, default: "" },
   seoTitle: { type: String, required: false, default: "" },
   host: { type: mongoose.Schema.Types.ObjectId, ref: 'Host', required: false },
+  // Admin review feedback for host trip proposals (rejection reason / requested changes)
+  adminFeedback: { type: String, default: "" },
   // addsection: [{ type: String }],
 });
 

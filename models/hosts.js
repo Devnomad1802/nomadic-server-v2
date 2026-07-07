@@ -104,6 +104,15 @@ const hostSchema = mongoose.Schema(
     seoSlug: String,
     metaDescription: String,
 
+    // Login account link (Host Dashboard). Optional + additive: legacy hosts
+    // without a linked User are unaffected; /host-portal/me also falls back
+    // to matching emailAddress against the JWT user's email.
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: false,
+    },
+
     // Status and Verification
     status: {
       type: String,

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { catchAsync } from "../middlewares/index.js";
-import { AddTrip, updateTrip } from "../controllers/trips.js";
+import { AddTrip, updateTrip, updateTripStatus } from "../controllers/trips.js";
 import { GetAllTrips } from "../controllers/trips.js";
 import { GetTripsById } from "../controllers/trips.js";
 import {
@@ -17,6 +17,7 @@ export const TipsRouts = Router();
 
 TipsRouts.post("/addTrip", catchAsync(AddTrip));
 TipsRouts.post("/updateTrip", catchAsync(updateTrip));
+TipsRouts.post("/updateTripStatus", catchAsync(updateTripStatus));
 TipsRouts.get("/GetAllTrips", catchAsync(GetAllTrips));
 TipsRouts.get("/GetTrendingTrips", catchAsync(GetTrendingTrips));
 TipsRouts.get("/GetAllTripsForUser", catchAsync(GetAllTripsForUser));

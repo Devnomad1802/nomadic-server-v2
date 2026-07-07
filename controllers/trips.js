@@ -190,6 +190,10 @@ export const AddTrip = async (req, res) => {
         strikePrice,
         commissionRate,
         host,
+        // Host proposals arrive with Status="pending" so they require admin
+        // approval before going live. Admin-created trips send no Status
+        // (undefined → not gated), so existing admin flow is unaffected.
+        Status: req.body.Status,
         nights,
         type,
         numberOfDays,
@@ -533,8 +537,9 @@ export const GetAllTrips = async (req, res) => {
 };
 export const GetAllTripsForUser = async (req, res) => {
   try {
-    // Fetch all trips from the database with host details populated
-    const trips = await Trips.find({ enableBooking: true })
+    // Public listing: hide host proposals awaiting/denied admin approval.
+    // $nin also matches docs without a Status field, so legacy/admin trips stay visible.
+    const trips = await Trips.find({ enableBooking: true, Status: { $nin: ["pending", "rejected"] } })
       .populate('host')
       .sort({ date: -1 });
     return res
@@ -548,7 +553,7 @@ export const GetAllTripsForUser = async (req, res) => {
 };
 export const GetTrendingTrips = async (req, res) => {
   try {
-    const trips = await Trips.find({ Trending: true })
+    const trips = await Trips.find({ Trending: true, Status: { $nin: ["pending", "rejected"] } })
       .populate('host')
       .sort({ date: -1 });
     return res
@@ -596,7 +601,8 @@ export const GetTripsByCagtegory = async (req, res) => {
     }
 
     // Fetch all trips and filter in memory to handle both array format and legacy comma-separated format
-    const allTrips = await Trips.find({})
+    // (exclude host proposals awaiting/denied admin approval)
+    const allTrips = await Trips.find({ Status: { $nin: ["pending", "rejected"] } })
       .populate('host')
       .sort({ date: -1 });
 
@@ -684,8 +690,9 @@ export const GetAllTripsWithFilter = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
+    const approvalGate = { Status: { $nin: ["pending", "rejected"] } };
     const trips = await Trips.find({
-      $or: [{ status: status }, { type: type }],
+      $and: [{ $or: [{ status: status }, { type: type }] }, approvalGate],
     })
       .populate('host')
       .limit(limit)
@@ -693,7 +700,7 @@ export const GetAllTripsWithFilter = async (req, res) => {
       .sort({ date: -1 });
     // Get the total count of trips that match the filter
     const totalTrips = await Trips.countDocuments({
-      $or: [{ Status: status }, { type: type }],
+      $and: [{ $or: [{ Status: status }, { type: type }] }, approvalGate],
     });
 
     // Send response with trip data and pagination info
@@ -707,6 +714,34 @@ export const GetAllTripsWithFilter = async (req, res) => {
   } catch (error) {
     // Handle any errors
     console.error("Error retrieving trips:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+// ------------------------- update trip approval status (admin) -------------------------
+// Admin review of host trip proposals: approve / reject / request changes.
+// Approving sets the trip publicly bookable; the trip keeps its host link.
+export const updateTripStatus = async (req, res) => {
+  try {
+    const { tripId, _id, Status, adminFeedback } = req.body;
+    const id = tripId || _id;
+    if (!id) {
+      return res.status(400).json({ error: "Trip ID is required" });
+    }
+    const allowed = ["approved", "rejected", "changes_requested", "pending"];
+    if (!allowed.includes(Status)) {
+      return res.status(400).json({ error: "Invalid Status value" });
+    }
+    const update = { Status };
+    if (adminFeedback !== undefined) update.adminFeedback = adminFeedback;
+    if (Status === "approved") update.enableBooking = true; // goes live on approval
+    const trip = await Trips.findByIdAndUpdate(id, update, { new: true }).populate("host");
+    if (!trip) {
+      return res.status(404).json({ error: "Trip not found" });
+    }
+    return res.status(200).json({ message: "Trip status updated", data: trip });
+  } catch (error) {
+    console.error("Error updating trip status:", error);
     return res.status(500).json({ error: "Internal server error" });
   }
 };
