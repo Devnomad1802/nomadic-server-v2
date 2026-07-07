@@ -739,6 +739,25 @@ export const updateTripStatus = async (req, res) => {
     if (!trip) {
       return res.status(404).json({ error: "Trip not found" });
     }
+
+    // Notify the owning host about the review outcome (fire-and-forget).
+    if (trip.host?._id) {
+      const { notifyHost } = await import("./hostPortal.js");
+      const titles = {
+        approved: "Trip approved",
+        rejected: "Trip rejected",
+        changes_requested: "Changes requested",
+        pending: "Trip back in review",
+      };
+      const bodies = {
+        approved: `"${trip.title}" has been approved and is now live.`,
+        rejected: `"${trip.title}" was rejected.${adminFeedback ? ` Reason: ${adminFeedback}` : ""}`,
+        changes_requested: `"${trip.title}" needs changes.${adminFeedback ? ` ${adminFeedback}` : ""}`,
+        pending: `"${trip.title}" is back in review.`,
+      };
+      notifyHost(trip.host._id, `trip_${Status}`, titles[Status], bodies[Status], { tripId: String(trip._id) });
+    }
+
     return res.status(200).json({ message: "Trip status updated", data: trip });
   } catch (error) {
     console.error("Error updating trip status:", error);

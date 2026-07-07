@@ -5,7 +5,24 @@ import { User } from "../models/user.js";
 import { Trips } from "../models/trips.js";
 import { Bookings } from "../models/bookings.js";
 import { Enquire } from "../models/enquire.js";
+import { Notification } from "../models/notifications.js";
 import Payout from "../models/payouts.js";
+
+/** Fire-and-forget notification creation (never blocks the main flow). */
+export async function notifyHost(hostId, type, title, body, data = undefined) {
+  try {
+    await Notification.create({
+      recipientType: "host",
+      recipientId: String(hostId),
+      type,
+      title,
+      body,
+      data,
+    });
+  } catch (e) {
+    console.error("notifyHost failed:", e?.message);
+  }
+}
 
 /* ------------------------------------------------------------------
  * Host Portal (Host Dashboard) — self-scoped endpoints.
@@ -136,6 +153,13 @@ export const activateHost = async (req, res) => {
   host.isVerified = true;
   await host.save();
 
+  await notifyHost(
+    host._id,
+    "account",
+    "Welcome to your Host Dashboard",
+    "Your host account has been approved and your dashboard login is active."
+  );
+
   // Email credentials / welcome. Failure is non-fatal: the admin gets the
   // temp password back in the response to share manually.
   let emailSent = false;
@@ -174,6 +198,30 @@ export const activateHost = async (req, res) => {
       ...(tempPassword && !emailSent ? { tempPassword } : {}),
     },
   });
+};
+
+// GET /host-portal/me/notifications
+export const getMyNotifications = async (req, res) => {
+  const host = await requireHost(req, res);
+  if (!host) return;
+  const items = await Notification.find({
+    recipientType: "host",
+    recipientId: String(host._id),
+  })
+    .sort({ createdAt: -1 })
+    .limit(100);
+  const unread = items.filter((n) => !n.isRead).length;
+  return res.status(200).json({ success: true, unread, data: items });
+};
+
+// POST /host-portal/me/notifications/read  { id? } — one or all read.
+export const markMyNotificationsRead = async (req, res) => {
+  const host = await requireHost(req, res);
+  if (!host) return;
+  const filter = { recipientType: "host", recipientId: String(host._id) };
+  if (req.body?.id) filter._id = req.body.id;
+  const r = await Notification.updateMany(filter, { isRead: true });
+  return res.status(200).json({ success: true, modified: r.modifiedCount ?? 0 });
 };
 
 // GET /host-portal/me/overview — KPI aggregate for the dashboard.

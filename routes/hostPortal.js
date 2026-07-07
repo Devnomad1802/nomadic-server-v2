@@ -7,6 +7,8 @@ import {
   getMyBookings,
   getMyEnquiries,
   getMyOverview,
+  getMyNotifications,
+  markMyNotificationsRead,
   activateHost,
 } from "../controllers/hostPortal.js";
 
@@ -23,6 +25,8 @@ HostPortalRoutes.get("/me/trips", auth, catchAsync(getMyTrips));
 HostPortalRoutes.get("/me/bookings", auth, catchAsync(getMyBookings));
 HostPortalRoutes.get("/me/enquiries", auth, catchAsync(getMyEnquiries));
 HostPortalRoutes.get("/me/overview", auth, catchAsync(getMyOverview));
+HostPortalRoutes.get("/me/notifications", auth, catchAsync(getMyNotifications));
+HostPortalRoutes.post("/me/notifications/read", auth, catchAsync(markMyNotificationsRead));
 
 // Admin-only: approve a host application → create/link login + email credentials.
 HostPortalRoutes.post("/activate/:hostId", auth, catchAsync(activateHost));
