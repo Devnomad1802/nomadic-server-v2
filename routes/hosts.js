@@ -18,9 +18,10 @@ import {
   uploadHostGalleryImage,
   getTripsByHost,
 } from "../controllers/hosts.js";
-import { catchAsync } from "../middlewares/index.js";
+import { catchAsync, authRole } from "../middlewares/index.js";
 
 const hostRoutes = Router();
+const adminOnly = authRole("Admin");
 
 // IMPORTANT: Route order matters! Most specific routes must come before parameterized routes
 // This prevents conflicts like "/specialty" being interpreted as an ":id" parameter
@@ -33,36 +34,32 @@ hostRoutes.get("/stats/overview", catchAsync(getHostStats));
 hostRoutes.get("/specialty/:specialty", catchAsync(getHostsBySpecialty));
 hostRoutes.get("/location/:location", catchAsync(getHostsByLocation));
 
-// Status management (specific routes before parameterized ones)
-// These must come before /:id routes to prevent conflicts
-hostRoutes.patch("/:id/status", catchAsync(updateHostStatus));
-hostRoutes.patch("/:id/toggle-status", catchAsync(toggleHostStatus));
+// Status + management writes are Admin-only.
+hostRoutes.patch("/:id/status", ...adminOnly, catchAsync(updateHostStatus));
+hostRoutes.patch("/:id/toggle-status", ...adminOnly, catchAsync(toggleHostStatus));
 
-// Gallery management (specific routes before parameterized ones)
-// These must come before /:id routes to prevent conflicts
-hostRoutes.post("/:id/gallery", catchAsync(addGalleryImages));
-hostRoutes.delete("/:id/gallery", catchAsync(removeGalleryImages));
+// Gallery management (Admin-only)
+hostRoutes.post("/:id/gallery", ...adminOnly, catchAsync(addGalleryImages));
+hostRoutes.delete("/:id/gallery", ...adminOnly, catchAsync(removeGalleryImages));
 
-// Single gallery image management (specific routes before parameterized ones)
-// These must come before /:id routes to prevent conflicts
-hostRoutes.delete("/deleteGalleryImage", catchAsync(deleteHostGalleryImage));
-hostRoutes.post("/uploadGalleryImage", catchAsync(uploadHostGalleryImage));
+// Single gallery image management (Admin-only)
+hostRoutes.delete("/deleteGalleryImage", ...adminOnly, catchAsync(deleteHostGalleryImage));
+hostRoutes.post("/uploadGalleryImage", ...adminOnly, catchAsync(uploadHostGalleryImage));
 
-// Branding images management (specific routes before parameterized ones)
-// These must come before /:id routes to prevent conflicts
-hostRoutes.put("/:id/branding", catchAsync(updateBrandingImages));
+// Branding images management (Admin-only)
+hostRoutes.put("/:id/branding", ...adminOnly, catchAsync(updateBrandingImages));
 
-// Get trips by host (specific routes before parameterized ones)
-// This must come before /:id routes to prevent conflicts
+// Get trips by host — public read (used by the dashboard fallback)
 hostRoutes.get("/:id/trips", catchAsync(getTripsByHost));
 
-// Basic CRUD operations (parameterized routes last)
-// These come last because they use /:id parameters which could match any string
-hostRoutes.post("/", catchAsync(createHost));
+// Basic CRUD (parameterized routes last). Reads stay public (Meet Our Hosts
+// directory); getAllHosts trims sensitive fields for non-admins in the
+// controller. Writes are Admin-only.
+hostRoutes.post("/", ...adminOnly, catchAsync(createHost));
 hostRoutes.get("/", catchAsync(getAllHosts));
 hostRoutes.get("/:id", catchAsync(getHostById));
-hostRoutes.put("/:id", catchAsync(updateHost));
-hostRoutes.patch("/:id", catchAsync(updateHostPartial)); // New partial update endpoint
-hostRoutes.delete("/:id", catchAsync(deleteHost));
+hostRoutes.put("/:id", ...adminOnly, catchAsync(updateHost));
+hostRoutes.patch("/:id", ...adminOnly, catchAsync(updateHostPartial));
+hostRoutes.delete("/:id", ...adminOnly, catchAsync(deleteHost));
 
 export default hostRoutes;

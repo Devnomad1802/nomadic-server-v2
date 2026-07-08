@@ -341,8 +341,10 @@ export const getAllHosts = async (req, res) => {
   const sort = {};
   sort[sortBy] = sortOrder === "desc" ? -1 : 1;
 
-  // Execute query with pagination
+  // Execute query with pagination. Sensitive fields (bank/KYC/documents) are
+  // excluded from this public listing; admin edit uses getHostById (full doc).
   const hosts = await Host.find(filter)
+    .select("-bankName -accountNumber -ifscCode -accountHolderName -panNumber -gstNumber -documents -contact_id -fund_account_id")
     .sort(sort)
     .limit(limit * 1)
     .skip((page - 1) * limit)

@@ -34,7 +34,26 @@ app.use(express.json({ limit: "500mb" }));
 app.use(express.urlencoded({ extended: true, limit: "500mb" }));
 app.use(express.static("public"));
 
-app.use(cors());
+// CORS: when CORS_ORIGINS (comma-separated) is set, restrict to that allowlist;
+// otherwise stay permissive (unchanged behaviour) so prod isn't broken before
+// the env is configured. Set CORS_ORIGINS in production to lock this down.
+const corsAllowlist = (process.env.CORS_ORIGINS || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+if (corsAllowlist.length) {
+  app.use(
+    cors({
+      origin: (origin, cb) => {
+        if (!origin || corsAllowlist.includes(origin)) return cb(null, true);
+        return cb(new Error("Not allowed by CORS"));
+      },
+      credentials: true,
+    })
+  );
+} else {
+  app.use(cors());
+}
 app.use(passport.initialize());
 passportMiddleware(passport);
 

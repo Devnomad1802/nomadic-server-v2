@@ -173,6 +173,23 @@ export const AddTrip = async (req, res) => {
       const normalizedRatings = parseArrayField(ratings);
       const normalizedReviews = parseArrayField(reviews);
 
+      // Host submissions are constrained server-side: forced to the caller's
+      // own Host record + Status "pending" (can't self-approve or post for
+      // another host). Admins keep full control.
+      let effectiveHost = host;
+      let effectiveStatus = req.body.Status;
+      if (String(req.user?.role).toLowerCase() === "host") {
+        const { Host } = await import("../models/hosts.js");
+        const ownHost = await Host.findOne({
+          $or: [{ user: req.user._id }, { emailAddress: req.user.email }],
+        });
+        if (!ownHost) {
+          return res.status(403).json({ error: "No host profile linked to this account." });
+        }
+        effectiveHost = ownHost._id;
+        effectiveStatus = "pending";
+      }
+
       const addTrip = new Trips({
         title,
         endSelectDate,
@@ -189,11 +206,11 @@ export const AddTrip = async (req, res) => {
         price,
         strikePrice,
         commissionRate,
-        host,
-        // Host proposals arrive with Status="pending" so they require admin
-        // approval before going live. Admin-created trips send no Status
-        // (undefined → not gated), so existing admin flow is unaffected.
-        Status: req.body.Status,
+        host: effectiveHost,
+        // Host proposals are forced pending server-side (see above). Admin-
+        // created trips send no Status (undefined → not gated), so the
+        // existing admin flow is unaffected.
+        Status: effectiveStatus,
         nights,
         type,
         numberOfDays,

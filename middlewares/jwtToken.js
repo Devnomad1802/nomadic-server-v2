@@ -4,8 +4,9 @@ const { APP_SECRET } = process.env;
 
 export const logIn = (user) =>
   new Promise((resolve, reject) => {
-    // const payload = user.toObject();
-    jwt.sign(user, APP_SECRET, (error, token) => {
+    // Tokens now expire (7d). Legacy tokens without `exp` still verify, so
+    // existing sessions are not force-logged-out.
+    jwt.sign(user, APP_SECRET, { expiresIn: "7d" }, (error, token) => {
       if (!error) {
         resolve(`Bearer ${token}`);
       } else {
