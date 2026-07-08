@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { Resend } from "resend";
+import { uploadFilesToS3 } from "../middlewares/index.js";
 import { Host } from "../models/hosts.js";
 import { User } from "../models/user.js";
 import { Trips } from "../models/trips.js";
@@ -289,6 +290,40 @@ export const updateMyTrip = async (req, res) => {
   trip.enableBooking = false;
   await trip.save();
   return res.status(200).json({ success: true, message: "Trip updated and resubmitted for review.", data: trip });
+};
+
+// POST /host-portal/me/documents — host uploads their OWN verification
+// documents (panCard | gstCertificate | bankPassbook | businessLicense).
+// Uploading resets host verification to pending for admin re-review.
+export const uploadMyDocuments = async (req, res) => {
+  const host = await requireHost(req, res);
+  if (!host) return;
+
+  const fields = [
+    { name: "panCard", maxCount: 1 },
+    { name: "gstCertificate", maxCount: 1 },
+    { name: "bankPassbook", maxCount: 1 },
+    { name: "businessLicense", maxCount: 1 },
+  ];
+
+  uploadFilesToS3(fields)(req, res, async (err) => {
+    if (err) {
+      return res.status(500).json({ success: false, message: "Upload failed: " + err.message });
+    }
+    if (!req.uploadedFiles || Object.keys(req.uploadedFiles).length === 0) {
+      return res.status(400).json({ success: false, message: "No document uploaded." });
+    }
+    const docs = { ...(host.documents || {}) };
+    for (const f of fields) {
+      const up = req.uploadedFiles[f.name];
+      if (up && up[0]) docs[f.name] = up[0].url;
+    }
+    host.documents = docs;
+    host.isVerified = false; // new docs → admin must re-verify
+    if (host.status === "approved") host.status = "pending";
+    await host.save();
+    return res.status(200).json({ success: true, message: "Document uploaded — pending admin verification.", data: host.documents });
+  });
 };
 
 // GET /host-portal/me/analytics — per-trip views/bookings/revenue + totals.

@@ -13,6 +13,7 @@ import {
   updateMyHost,
   replyToEnquiry,
   updateMyTrip,
+  uploadMyDocuments,
   activateHost,
 } from "../controllers/hostPortal.js";
 
@@ -32,6 +33,7 @@ HostPortalRoutes.get("/me/overview", auth, catchAsync(getMyOverview));
 HostPortalRoutes.put("/me", auth, catchAsync(updateMyHost));
 HostPortalRoutes.put("/me/trips/:id", auth, catchAsync(updateMyTrip));
 HostPortalRoutes.post("/me/enquiries/:id/reply", auth, catchAsync(replyToEnquiry));
+HostPortalRoutes.post("/me/documents", auth, catchAsync(uploadMyDocuments));
 HostPortalRoutes.get("/me/analytics", auth, catchAsync(getMyAnalytics));
 HostPortalRoutes.get("/me/notifications", auth, catchAsync(getMyNotifications));
 HostPortalRoutes.post("/me/notifications/read", auth, catchAsync(markMyNotificationsRead));
