@@ -10,6 +10,9 @@ import {
   getMyAnalytics,
   getMyNotifications,
   markMyNotificationsRead,
+  updateMyHost,
+  replyToEnquiry,
+  updateMyTrip,
   activateHost,
 } from "../controllers/hostPortal.js";
 
@@ -26,6 +29,9 @@ HostPortalRoutes.get("/me/trips", auth, catchAsync(getMyTrips));
 HostPortalRoutes.get("/me/bookings", auth, catchAsync(getMyBookings));
 HostPortalRoutes.get("/me/enquiries", auth, catchAsync(getMyEnquiries));
 HostPortalRoutes.get("/me/overview", auth, catchAsync(getMyOverview));
+HostPortalRoutes.put("/me", auth, catchAsync(updateMyHost));
+HostPortalRoutes.put("/me/trips/:id", auth, catchAsync(updateMyTrip));
+HostPortalRoutes.post("/me/enquiries/:id/reply", auth, catchAsync(replyToEnquiry));
 HostPortalRoutes.get("/me/analytics", auth, catchAsync(getMyAnalytics));
 HostPortalRoutes.get("/me/notifications", auth, catchAsync(getMyNotifications));
 HostPortalRoutes.post("/me/notifications/read", auth, catchAsync(markMyNotificationsRead));

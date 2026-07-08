@@ -224,6 +224,73 @@ export const markMyNotificationsRead = async (req, res) => {
   return res.status(200).json({ success: true, modified: r.modifiedCount ?? 0 });
 };
 
+// PUT /host-portal/me — host updates their OWN profile (whitelisted fields).
+// Status/verification/user-link/PAN are never editable here.
+const EDITABLE_HOST_FIELDS = [
+  "hostTitle", "tagline", "hostOverview", "shortBio", "phoneNumber", "whatsapp",
+  "location", "city", "state", "pincode", "completeAddress", "foundedYear",
+  "experience", "hqLocation", "supportHours", "languages", "specialties",
+  "achievements", "socialMedia", "seoTitle", "seoSlug", "metaDescription",
+];
+export const updateMyHost = async (req, res) => {
+  const host = await requireHost(req, res);
+  if (!host) return;
+  const updates = {};
+  for (const k of EDITABLE_HOST_FIELDS) {
+    if (req.body[k] !== undefined) updates[k] = req.body[k];
+  }
+  const updated = await Host.findByIdAndUpdate(host._id, updates, { new: true });
+  return res.status(200).json({ success: true, message: "Profile updated.", data: updated });
+};
+
+// POST /host-portal/me/enquiries/:id/reply — host replies to an enquiry on
+// their own trip (platform-safe; appends to the chat thread).
+export const replyToEnquiry = async (req, res) => {
+  const host = await requireHost(req, res);
+  if (!host) return;
+  const { message } = req.body;
+  if (!message || !String(message).trim()) {
+    return res.status(400).json({ success: false, message: "Message is required." });
+  }
+  const enquiry = await Enquire.findOne({ _id: req.params.id, hostId: String(host._id) });
+  if (!enquiry) {
+    return res.status(404).json({ success: false, message: "Enquiry not found." });
+  }
+  enquiry.chat = enquiry.chat || [];
+  enquiry.chat.push({ MessageBy: "host", Message: String(message), timeStamp: new Date() });
+  enquiry.Reply = String(message);
+  enquiry.status = "Replied";
+  await enquiry.save();
+  return res.status(200).json({ success: true, data: enquiry });
+};
+
+// PUT /host-portal/me/trips/:id — host edits their OWN trip and resubmits.
+// Any edit returns the trip to "pending" for admin re-review. Text fields
+// only (images unchanged); Status/host cannot be set by the host.
+const HOST_EDITABLE_TRIP_FIELDS = [
+  "title", "subTitle", "days", "nights", "location", "pickUp", "dropOff",
+  "categories", "overview", "type", "price", "strikePrice", "commissionRate",
+  "firstBookingPrice", "Inclusion", "Exclusion", "ThingsToCarry", "Cancellation",
+  "highlights", "numberOfDays", "numberOfSeats", "selectDate", "endSelectDate",
+  "addDays", "addsection", "tripOff", "metaDescription", "seoSlug", "seoTitle",
+];
+export const updateMyTrip = async (req, res) => {
+  const host = await requireHost(req, res);
+  if (!host) return;
+  const trip = await Trips.findOne({ _id: req.params.id, host: host._id });
+  if (!trip) {
+    return res.status(404).json({ success: false, message: "Trip not found." });
+  }
+  for (const k of HOST_EDITABLE_TRIP_FIELDS) {
+    if (req.body[k] !== undefined) trip[k] = req.body[k];
+  }
+  trip.Status = "pending"; // resubmission → re-review
+  trip.adminFeedback = "";
+  trip.enableBooking = false;
+  await trip.save();
+  return res.status(200).json({ success: true, message: "Trip updated and resubmitted for review.", data: trip });
+};
+
 // GET /host-portal/me/analytics — per-trip views/bookings/revenue + totals.
 export const getMyAnalytics = async (req, res) => {
   const host = await requireHost(req, res);
