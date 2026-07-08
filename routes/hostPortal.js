@@ -16,6 +16,11 @@ import {
   uploadMyDocuments,
   activateHost,
 } from "../controllers/hostPortal.js";
+import {
+  submitApplication,
+  listApplications,
+  updateApplication,
+} from "../controllers/hostApplications.js";
 
 /* Host Portal routes — JWT required on every endpoint. Mounted at
  * /api/host-portal (separate mount → zero interference with the existing
@@ -24,6 +29,12 @@ import {
 const auth = passport.authenticate("jwt", { session: false });
 
 export const HostPortalRoutes = Router();
+
+// Public: "Become a Host" application intake.
+HostPortalRoutes.post("/apply", catchAsync(submitApplication));
+// Admin: review host applications.
+HostPortalRoutes.get("/applications", auth, catchAsync(listApplications));
+HostPortalRoutes.patch("/applications/:id", auth, catchAsync(updateApplication));
 
 HostPortalRoutes.get("/me", auth, catchAsync(getMyHost));
 HostPortalRoutes.get("/me/trips", auth, catchAsync(getMyTrips));
