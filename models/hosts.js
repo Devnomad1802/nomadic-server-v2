@@ -113,12 +113,17 @@ const hostSchema = mongoose.Schema(
       required: false,
     },
 
+    // Regions the host operates in (Host Dashboard onboarding)
+    regions: [String],
+
     // Status and Verification
     status: {
       type: String,
       enum: ["pending", "approved", "rejected"],
       default: "pending",
     },
+    // Shown to the host when rejected (KYC/verification review)
+    rejectionReason: { type: String, default: "" },
    
     isActive: {
       type: Boolean,

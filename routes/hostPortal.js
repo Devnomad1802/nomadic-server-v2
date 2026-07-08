@@ -11,6 +11,7 @@ import {
   getMyNotifications,
   markMyNotificationsRead,
   updateMyHost,
+  submitMyVerification,
   replyToEnquiry,
   updateMyTrip,
   uploadMyDocuments,
@@ -42,6 +43,7 @@ HostPortalRoutes.get("/me/bookings", auth, catchAsync(getMyBookings));
 HostPortalRoutes.get("/me/enquiries", auth, catchAsync(getMyEnquiries));
 HostPortalRoutes.get("/me/overview", auth, catchAsync(getMyOverview));
 HostPortalRoutes.put("/me", auth, catchAsync(updateMyHost));
+HostPortalRoutes.post("/me/submit-verification", auth, catchAsync(submitMyVerification));
 HostPortalRoutes.put("/me/trips/:id", auth, catchAsync(updateMyTrip));
 HostPortalRoutes.post("/me/enquiries/:id/reply", auth, catchAsync(replyToEnquiry));
 HostPortalRoutes.post("/me/documents", auth, catchAsync(uploadMyDocuments));

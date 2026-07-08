@@ -232,6 +232,7 @@ const EDITABLE_HOST_FIELDS = [
   "location", "city", "state", "pincode", "completeAddress", "foundedYear",
   "experience", "hqLocation", "supportHours", "languages", "specialties",
   "achievements", "socialMedia", "seoTitle", "seoSlug", "metaDescription",
+  "regions", "hostName",
 ];
 export const updateMyHost = async (req, res) => {
   const host = await requireHost(req, res);
@@ -242,6 +243,38 @@ export const updateMyHost = async (req, res) => {
   }
   const updated = await Host.findByIdAndUpdate(host._id, updates, { new: true });
   return res.status(200).json({ success: true, message: "Profile updated.", data: updated });
+};
+
+// POST /host-portal/me/submit-verification — host submits profile + docs for
+// admin review. Requires the minimum profile + at least PAN + bank passbook.
+// Sets status=pending ("Under Review"); admin approves/rejects afterwards.
+export const submitMyVerification = async (req, res) => {
+  const host = await requireHost(req, res);
+  if (!host) return;
+
+  const missing = [];
+  if (!host.hostTitle && !host.hostName) missing.push("business name");
+  if (!host.hostOverview && !host.shortBio) missing.push("bio");
+  if (!host.phoneNumber) missing.push("phone number");
+  if (!(host.languages || []).length) missing.push("languages");
+  if (!(host.specialties || []).length) missing.push("specialties");
+  const docs = host.documents || {};
+  if (!docs.panCard) missing.push("PAN card");
+  if (!docs.bankPassbook) missing.push("bank passbook");
+
+  if (missing.length) {
+    return res.status(400).json({
+      success: false,
+      message: `Complete before submitting: ${missing.join(", ")}.`,
+      missing,
+    });
+  }
+
+  host.status = "pending";
+  host.rejectionReason = "";
+  await host.save();
+  await notifyHost(host._id, "account", "Verification submitted", "Your profile and documents are under admin review.");
+  return res.status(200).json({ success: true, message: "Submitted for verification.", data: { status: host.status } });
 };
 
 // POST /host-portal/me/enquiries/:id/reply — host replies to an enquiry on

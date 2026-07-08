@@ -1093,10 +1093,29 @@ export const updateHostStatus = async (req, res) => {
   if (isVerified !== undefined) {
     updateData.isVerified = isVerified;
   }
+  // KYC review: persist a rejection reason (shown in the Host Dashboard);
+  // approval marks verified + clears any old reason.
+  if (req.body.rejectionReason !== undefined) {
+    updateData.rejectionReason = req.body.rejectionReason;
+  }
+  if (status === "approved") {
+    updateData.isVerified = isVerified !== undefined ? isVerified : true;
+    updateData.rejectionReason = "";
+  }
 
   const updatedHost = await Host.findByIdAndUpdate(id, updateData, {
     new: true,
   });
+
+  // Notify the host about the verification outcome (fire-and-forget).
+  try {
+    const { notifyHost } = await import("./hostPortal.js");
+    if (status === "approved") {
+      notifyHost(id, "account", "Verification approved", "Your host account is verified — your dashboard is unlocked.");
+    } else if (status === "rejected") {
+      notifyHost(id, "account", "Verification rejected", req.body.rejectionReason || "Please review your details and resubmit.");
+    }
+  } catch { /* non-fatal */ }
 
   res.status(200).json({
     success: true,

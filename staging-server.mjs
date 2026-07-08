@@ -122,6 +122,30 @@ await Trips.create([
   },
 ]);
 
+// --- freshly-activated host, NOT yet verified (KYC gate testing) ---
+const freshUser = await new User({
+  name: "River Bend Stays",
+  email: "host@riverbend.in",
+  password: "Host@123",
+  role: "Host",
+  isVerified: true,
+}).save();
+await new Host({
+  hostName: "River Bend Stays",
+  hostTitle: "River Bend Stays",
+  emailAddress: "host@riverbend.in",
+  panNumber: "LMNOP4321Q",
+  status: "pending",
+  isVerified: false,
+  user: freshUser._id,
+  // docs pre-seeded (staging has no real S3) so the submit→review→approve
+  // loop is testable; the upload endpoint itself is guard-tested separately.
+  documents: {
+    panCard: "https://example.com/staging/pan.pdf",
+    bankPassbook: "https://example.com/staging/passbook.pdf",
+  },
+}).save();
+
 // --- unactivated host application (Phase C activation testing) ---
 await new Host({
   hostName: "Coastal Escapes",
