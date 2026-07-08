@@ -569,6 +569,9 @@ export const GetTripsById = async (req, res) => {
     const trips = await Trips.find({ _id: req.body._id })
       .populate('host')
       .sort({ date: -1 });
+
+    // Lightweight analytics: count detail views (fire-and-forget, response unchanged)
+    Trips.updateOne({ _id: req.body._id }, { $inc: { viewCount: 1 } }).catch(() => {});
     return res
       .status(200)
       .json({ message: "Trip retrieved successfully", data: trips });

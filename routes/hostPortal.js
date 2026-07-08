@@ -7,6 +7,7 @@ import {
   getMyBookings,
   getMyEnquiries,
   getMyOverview,
+  getMyAnalytics,
   getMyNotifications,
   markMyNotificationsRead,
   activateHost,
@@ -25,6 +26,7 @@ HostPortalRoutes.get("/me/trips", auth, catchAsync(getMyTrips));
 HostPortalRoutes.get("/me/bookings", auth, catchAsync(getMyBookings));
 HostPortalRoutes.get("/me/enquiries", auth, catchAsync(getMyEnquiries));
 HostPortalRoutes.get("/me/overview", auth, catchAsync(getMyOverview));
+HostPortalRoutes.get("/me/analytics", auth, catchAsync(getMyAnalytics));
 HostPortalRoutes.get("/me/notifications", auth, catchAsync(getMyNotifications));
 HostPortalRoutes.post("/me/notifications/read", auth, catchAsync(markMyNotificationsRead));
 

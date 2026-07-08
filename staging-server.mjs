@@ -101,14 +101,18 @@ await Trips.create([
   {
     title: "Jaisalmer Desert Safari",
     price: "12500", days: "4", nights: "3", location: "Rajasthan, India",
-    categories: ["TRIP"], host: host._id, enableBooking: true, // legacy: no Status
+    categories: ["TRIP"], host: host._id, enableBooking: true, viewCount: 420, // legacy: no Status
     cardImage: "https://images.unsplash.com/photo-1509316785289-025f5b846b35?w=400",
+    selectDate: JSON.stringify([{ BatchDate: "2026-07-15" }, { BatchDate: "2026-08-10" }]),
+    endSelectDate: JSON.stringify([{ EndBatchDate: "2026-07-19" }, { EndBatchDate: "2026-08-14" }]),
   },
   {
     title: "Manali High Pass Trek",
     price: "18000", days: "7", nights: "6", location: "Himachal Pradesh",
-    categories: ["BACKPACKING"], host: host._id, enableBooking: true, Status: "approved",
+    categories: ["BACKPACKING"], host: host._id, enableBooking: true, Status: "approved", viewCount: 261,
     cardImage: "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=400",
+    selectDate: JSON.stringify([{ BatchDate: "2026-07-22" }]),
+    endSelectDate: JSON.stringify([{ EndBatchDate: "2026-07-28" }]),
   },
   {
     title: "Spiti Valley Winter Expedition",

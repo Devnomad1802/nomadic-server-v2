@@ -47,6 +47,8 @@ const userSchema = mongoose.Schema({
   host: { type: mongoose.Schema.Types.ObjectId, ref: 'Host', required: false },
   // Admin review feedback for host trip proposals (rejection reason / requested changes)
   adminFeedback: { type: String, default: "" },
+  // Lightweight analytics: public detail-page views (additive)
+  viewCount: { type: Number, default: 0 },
   // addsection: [{ type: String }],
 });
 

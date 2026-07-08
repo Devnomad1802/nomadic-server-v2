@@ -224,6 +224,50 @@ export const markMyNotificationsRead = async (req, res) => {
   return res.status(200).json({ success: true, modified: r.modifiedCount ?? 0 });
 };
 
+// GET /host-portal/me/analytics — per-trip views/bookings/revenue + totals.
+export const getMyAnalytics = async (req, res) => {
+  const host = await requireHost(req, res);
+  if (!host) return;
+
+  const trips = await Trips.find({ host: host._id }).select("_id title viewCount Status enableBooking");
+  const tripIds = trips.map((t) => String(t._id));
+  const bookings = await Bookings.find({ tripId: { $in: tripIds } }).select("tripId total");
+
+  const byTrip = trips.map((t) => {
+    const b = bookings.filter((x) => x.tripId === String(t._id));
+    const revenue = b.reduce((s, x) => s + (Number(x.total) || 0), 0);
+    const views = Number(t.viewCount) || 0;
+    return {
+      tripId: t._id,
+      title: t.title,
+      views,
+      bookings: b.length,
+      revenue,
+      conversion: views > 0 ? Number(((b.length / views) * 100).toFixed(1)) : 0,
+    };
+  });
+
+  const totals = byTrip.reduce(
+    (a, t) => ({
+      views: a.views + t.views,
+      bookings: a.bookings + t.bookings,
+      revenue: a.revenue + t.revenue,
+    }),
+    { views: 0, bookings: 0, revenue: 0 },
+  );
+
+  return res.status(200).json({
+    success: true,
+    data: {
+      totals: {
+        ...totals,
+        conversion: totals.views > 0 ? Number(((totals.bookings / totals.views) * 100).toFixed(1)) : 0,
+      },
+      trips: byTrip.sort((a, b) => b.views - a.views),
+    },
+  });
+};
+
 // GET /host-portal/me/overview — KPI aggregate for the dashboard.
 export const getMyOverview = async (req, res) => {
   const host = await requireHost(req, res);
