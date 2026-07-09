@@ -26,7 +26,10 @@ export const addReview = async (req, res) => {
       return res.status(500).json({ error: "Failed to upload files" });
     }
 
-    const { Title, Name, Review, rating, status, userId, Job } = req.body;
+    const {
+      Title, Name, Review, rating, status, userId, Job,
+      source, location, tripName, externalId, googleAuthorUrl,
+    } = req.body;
 
     try {
       // Process uploaded files from S3
@@ -43,6 +46,13 @@ export const addReview = async (req, res) => {
         status,
         Profile_Image,
         userId,
+        // Brand-review provenance (manual by default; "google" for cached
+        // Google reviews added by an admin).
+        source: ["manual", "google"].includes(source) ? source : "manual",
+        location: location || "",
+        tripName: tripName || "",
+        externalId: externalId || null,
+        googleAuthorUrl: googleAuthorUrl || null,
         Date: new Date(new Date().toUTCString()),
       });
 
@@ -62,7 +72,10 @@ export const addReview = async (req, res) => {
   });
 };
 export const updateReview = async (req, res) => {
-  const { _id, Title, Name, Review, rating, status, userId, Job } = req.body;
+  const {
+    _id, Title, Name, Review, rating, status, userId, Job,
+    source, location, tripName,
+  } = req.body;
 
   try {
     if (!_id) {
@@ -83,6 +96,9 @@ export const updateReview = async (req, res) => {
     existingReview.status = status;
     existingReview.userId = userId;
     existingReview.Job = Job;
+    if (source !== undefined) existingReview.source = source;
+    if (location !== undefined) existingReview.location = location;
+    if (tripName !== undefined) existingReview.tripName = tripName;
 
     // Save the updated review
     await existingReview.save();

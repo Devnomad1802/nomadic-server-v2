@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { catchAsync } from "../middlewares/index.js";
 import passport from "passport";
+import { isAdmin } from "../middlewares/isAdmin.js";
 
 import {
   newBooking,
@@ -14,59 +15,26 @@ import {
   getFullPaymentBookings,
 } from "../controllers/bookings.js";
 
-export const BookingRouts = Router();
-BookingRouts.post(
-  "/newBooking",
-  // passport.authenticate("jwt", { session: false }),
-  catchAsync(newBooking)
-);
-BookingRouts.delete(
-  "/deleteBooking",
-  // passport.authenticate("jwt", { session: false }),
-  catchAsync(deleteBooking)
-);
-BookingRouts.get(
-  "/getAllBookings",
-  // passport.authenticate("jwt", { session: false }),
-  catchAsync(getAllBookings)
-);
-BookingRouts.post(
-  "/getUserBooking",
-  // passport.authenticate("jwt", { session: false }),
-  catchAsync(getUserBooking)
-);
-BookingRouts.post(
-  "/getBookingsByTripId",
-  // passport.authenticate("jwt", { session: false }),
-  catchAsync(getBookingsByTripId)
-);
+const auth = passport.authenticate("jwt", { session: false });
 
+export const BookingRouts = Router();
+
+// ── Authenticated user endpoints (logged-in customer) ──
+BookingRouts.post("/newBooking", auth, catchAsync(newBooking));
+BookingRouts.delete("/deleteBooking", auth, catchAsync(deleteBooking));
+BookingRouts.post("/getUserBooking", auth, catchAsync(getUserBooking));
 BookingRouts.post(
   "/getUserHoistoryTripsBookings",
-  // passport.authenticate("jwt", { session: false }),
+  auth,
   catchAsync(getUserHoistoryTripsBookings)
 );
-BookingRouts.put(
-  "/updateBooking",
-  // passport.authenticate("jwt", { session: false }),
-  catchAsync(updateBooking)
-);
-BookingRouts.post(
-  "/getAllBookings",
-  // passport.authenticate("jwt", { session: false }),
-  catchAsync(getAllBookings)
-);
-BookingRouts.get(
-  "/GetBookingforDashbord",
-  // passport.authenticate("jwt", { session: false }),
-  catchAsync(GetBookingforDashbord)
-);
+BookingRouts.put("/updateBooking", auth, catchAsync(updateBooking));
 
-// Get all bookings with full payment status
-BookingRouts.get(
-  "/getFullPaymentBookings",
-  // passport.authenticate("jwt", { session: false }),
-  catchAsync(getFullPaymentBookings)
-);
+// ── Admin-only endpoints (full lists / dashboard / revenue) ──
+BookingRouts.get("/getAllBookings", isAdmin, catchAsync(getAllBookings));
+BookingRouts.post("/getAllBookings", isAdmin, catchAsync(getAllBookings));
+BookingRouts.post("/getBookingsByTripId", isAdmin, catchAsync(getBookingsByTripId));
+BookingRouts.get("/GetBookingforDashbord", isAdmin, catchAsync(GetBookingforDashbord));
+BookingRouts.get("/getFullPaymentBookings", isAdmin, catchAsync(getFullPaymentBookings));
 
 export default BookingRouts;

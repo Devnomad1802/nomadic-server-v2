@@ -1,9 +1,18 @@
 // ------------------------- user review routes -------------------------
 import { Router } from "express";
+import passport from "passport";
 import { catchAsync, uploadCoverImagesToS3 } from "../middlewares/index.js";
-import { addUserReview, getUserReviews, getAllUsersReviews, getAllReviewsByHostId, getuserReviewsByTripId } from "../controllers/UserReviews.js";
+import { addUserReview, getUserReviews, getAllUsersReviews, getAllReviewsByHostId, getuserReviewsByTripId, deleteUserReview, submitTripReview, getMyReviews, getMyPendingReviews } from "../controllers/UserReviews.js";
 
 export const UserReviewsRoutes = Router();
+const auth = passport.authenticate("jwt", { session: false });
+
+// ── Post-trip review system (JWT) ──
+// Submit a review for a completed booking (server verifies ownership,
+// payment, completion, one-per-booking). Optional photos via multipart.
+UserReviewsRoutes.post("/submitTripReview", auth, uploadCoverImagesToS3(), catchAsync(submitTripReview));
+UserReviewsRoutes.get("/myReviews", auth, catchAsync(getMyReviews));
+UserReviewsRoutes.get("/myPendingReviews", auth, catchAsync(getMyPendingReviews));
 
 // Add a new user review with profile image upload to S3
 // Using uploadCoverImagesToS3 which accepts ANY field name (more flexible)
@@ -30,5 +39,9 @@ UserReviewsRoutes.post("/getAllReviewsByHostId/:hostId", catchAsync(getAllReview
 UserReviewsRoutes.get("/getAllReviewsByHostId", catchAsync(getAllReviewsByHostId));
 UserReviewsRoutes.post("/getAllReviewsByHostId", catchAsync(getAllReviewsByHostId));
 UserReviewsRoutes.get("/getUserReviewsByHostId/:tripId", catchAsync(getuserReviewsByTripId));
+
+// Delete a review by id (admin host-review manager)
+UserReviewsRoutes.delete("/deleteUserReview/:id", catchAsync(deleteUserReview));
+UserReviewsRoutes.delete("/deleteUserReview", catchAsync(deleteUserReview));
 
 export default UserReviewsRoutes;

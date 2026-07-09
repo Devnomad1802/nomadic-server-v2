@@ -15,6 +15,7 @@ const hostSchema = mongoose.Schema(
       type: String,
       trim: true,
       unique: true,
+      sparse: true, // allow many hosts without a PAN (only enforce uniqueness when present)
     },
     gstNumber: String,
 
@@ -64,7 +65,43 @@ const hostSchema = mongoose.Schema(
       type: Number,
       default: 0,
     },
+    // % of traveller messages the host replies to (shown on the host detail page)
+    responseRate: {
+      type: Number,
+      default: 0,
+    },
     responseTimeLabel: String,
+
+    // Regions / destinations the host operates in (host detail page chips).
+    // Falls back to unique hosted-trip locations on the client when empty.
+    regionsHosted: [String],
+
+    // "Ask the host" FAQ — admin-managed question/answer pairs shown on the
+    // host detail page. Falls back to generic defaults on the client when empty.
+    faqs: [
+      {
+        question: String,
+        answer: String,
+      },
+    ],
+
+    // Google reviews (manual-cached): the host's Google Business link/place id.
+    // Used as a reference when an admin adds the host's Google reviews; host
+    // reviews stay in the host-scoped UserReviews collection (never the brand).
+    googleReviewUrl: String,
+    googlePlaceId: String,
+
+    // Verification badges — admin-managed trust badges shown on the host
+    // detail page. `icon` is a keyword (verified, certificate, award, trophy,
+    // star, firstaid, mountain, camera, leaf, language, clock, shield). Falls
+    // back to badges derived from isVerified/achievements/successRate when empty.
+    verificationBadges: [
+      {
+        title: String,
+        subtitle: String,
+        icon: String,
+      },
+    ],
 
     // Contact
     phoneNumber: String,

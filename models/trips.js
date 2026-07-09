@@ -49,6 +49,13 @@ const userSchema = mongoose.Schema({
   adminFeedback: { type: String, default: "" },
   // Lightweight analytics: public detail-page views (additive)
   viewCount: { type: Number, default: 0 },
+  // --- Trip Detail extras (all optional; hidden on the page when empty) ---
+  difficulty: { type: String, default: "" },
+  bestSeason: { type: String, default: "" },
+  groupSize: { type: String, default: "" },
+  importantInfo: { type: String, default: "" },
+  termsNotes: { type: String, default: "" },
+  faqs: [{ q: { type: String }, a: { type: String } }],
   // addsection: [{ type: String }],
 });
 

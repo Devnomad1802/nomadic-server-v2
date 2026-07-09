@@ -4,10 +4,16 @@ import { deleteMultipleFromS3 } from "../middlewares/index.js";
 // ------------------------- add user review -------------------------
 export const addUserReview = async (req, res) => {
     try {
-        const { userId, tripId, hostId, rating, review, name, tripName, date } = req.body;
+        const {
+            userId, tripId, hostId, rating, review, name, tripName, date,
+            source, location, entityType, externalId, googleAuthorUrl,
+        } = req.body;
 
-        // Validate required fields
-        if (!userId) {
+        // Validate required fields.
+        // Reviews may be submitted by guests (no auth) from the host detail
+        // page, so userId is optional — but a review must be tied to a host
+        // or a trip.
+        if (!hostId && !tripId) {
             // Clean up uploaded files if validation fails
             if (req.uploadedFiles) {
                 const filesToDelete = [];
@@ -20,7 +26,7 @@ export const addUserReview = async (req, res) => {
             }
             return res.status(400).json({
                 error: "Validation error",
-                message: "userId is required"
+                message: "hostId or tripId is required"
             });
         }
 
@@ -58,6 +64,13 @@ export const addUserReview = async (req, res) => {
             profileImage = convertToImageString(req.body.profileImage);
         }
 
+        // Scope + provenance. entityType is host when a hostId is present,
+        // otherwise trip — so host and trip reviews never get confused.
+        const resolvedEntityType =
+            entityType || (hostId ? "host" : tripId ? "trip" : undefined);
+        const allowedSources = ["traveller", "manual", "google"];
+        const resolvedSource = allowedSources.includes(source) ? source : "traveller";
+
         // Create new user review
         const newUserReview = new UserReviews({
             userId,
@@ -69,6 +82,14 @@ export const addUserReview = async (req, res) => {
             tripName: tripName || "",
             profileImage: profileImage,
             date: date ? new Date(date) : new Date(),
+            entityType: resolvedEntityType,
+            source: resolvedSource,
+            // Unauthenticated traveller submissions are held for moderation;
+            // verified post-trip reviews go through /submitTripReview instead.
+            status: resolvedSource === "traveller" ? "pending" : "approved",
+            location: location || "",
+            externalId: externalId || null,
+            googleAuthorUrl: googleAuthorUrl || null,
         });
 
         await newUserReview.save();
@@ -144,7 +165,7 @@ export const getAllUsersReviews = async (req, res) => {
         const query = tripName ? { tripName } : {};
 
         // Get all reviews with optional pagination and filtering
-        const allReviews = await UserReviews.find(query)
+        const allReviews = await UserReviews.find({ ...query, status: { $nin: ["pending", "rejected"] } })
             .sort({ date: -1 })
             .skip(skip)
             .limit(limit);
@@ -189,7 +210,7 @@ export const getAllReviewsByHostId = async (req, res) => {
         const skip = (page - 1) * limit;
 
         // Get all reviews for the host with optional pagination, sorted by date (newest first)
-        const reviews = await UserReviews.find({ hostId })
+        const reviews = await UserReviews.find({ hostId, status: { $nin: ["pending", "rejected"] } })
             .sort({ date: -1 })
             .skip(skip)
             .limit(limit);
@@ -234,7 +255,7 @@ export const getuserReviewsByTripId = async (req, res) => {
         const skip = (page - 1) * limit;
 
         // Get all reviews for the trip with optional pagination, sorted by date (newest first)
-        const reviews = await UserReviews.find({ tripId })
+        const reviews = await UserReviews.find({ tripId, status: { $nin: ["pending", "rejected"] } })
             .sort({ date: -1 })
             .skip(skip)
             .limit(limit);
@@ -259,3 +280,154 @@ export const getuserReviewsByTripId = async (req, res) => {
         });
     }
 };   
+// ------------------------- delete user review (admin) -------------------------
+// Removes a single review by its _id. Used by the admin host-review manager.
+export const deleteUserReview = async (req, res) => {
+    try {
+        const id = req.params.id || req.body.id || req.body._id;
+        if (!id) {
+            return res.status(400).json({
+                error: "Validation error",
+                message: "review id is required",
+            });
+        }
+
+        const deleted = await UserReviews.findByIdAndDelete(id);
+        if (!deleted) {
+            return res.status(404).json({
+                error: "Not found",
+                message: "Review not found",
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Review deleted successfully",
+            data: deleted,
+        });
+    } catch (error) {
+        console.error("Error deleting user review:", error);
+        return res.status(500).json({
+            error: "Internal server error",
+            message: error.message,
+        });
+    }
+};
+
+// ═══════════════════ Post-trip review system ═══════════════════
+// Traveller reviews tied to a completed booking. JWT-authed; the server
+// verifies ownership, payment, completion and one-review-per-booking.
+
+import { Bookings, Trips } from "../models/index.js";
+
+const parseJson = (v, f) => { try { return typeof v === "string" ? JSON.parse(v) : (v ?? f); } catch { return f; } };
+
+// A booking is reviewable when it is paid and its trip end date has passed.
+const bookingCompletion = (b) => {
+    const paid = b.paymentStatus === "fullPayment" || b.paymentStatus === "firstPayment";
+    if (!paid) return { paid, completed: false };
+    const cd = parseJson(b.cardData, {});
+    const end = cd?.cardDate?.endSelectDate || cd?.cardDate?.batchDate;
+    const endDate = end ? new Date(end) : null;
+    const completed = !!endDate && !isNaN(endDate) && endDate < new Date();
+    return { paid, completed, endDate };
+};
+
+// POST /submitTripReview (auth) — body: bookingId, rating, review, wouldRecommend?
+export const submitTripReview = async (req, res) => {
+    const userId = req.user?._id;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const { bookingId, rating, review, wouldRecommend } = req.body || {};
+    if (!bookingId) return res.status(400).json({ error: "bookingId is required" });
+    const stars = Number(rating);
+    if (!stars || stars < 1 || stars > 5) return res.status(400).json({ error: "rating must be 1-5" });
+
+    const booking = await Bookings.findById(bookingId);
+    if (!booking) return res.status(404).json({ error: "Booking not found" });
+    if (`${booking.userId}` !== `${userId}`) return res.status(403).json({ error: "Forbidden" });
+
+    const { paid, completed } = bookingCompletion(booking);
+    if (!paid) return res.status(400).json({ error: "Only paid bookings can be reviewed" });
+    if (!completed) return res.status(400).json({ error: "You can review this trip after it ends" });
+
+    const existing = await UserReviews.findOne({ bookingId: `${booking._id}` });
+    if (existing) return res.status(409).json({ error: "You have already reviewed this trip" });
+
+    const pd = parseJson(booking.paymentDetail, {});
+    // hostId from the live trip (snapshot may predate host linking).
+    let hostId = null;
+    try {
+        const trip = await Trips.findById(booking.tripId);
+        hostId = trip?.host ? `${trip.host}` : null;
+    } catch { /* noop */ }
+
+    const photos = (req.uploadedFiles ? Object.values(req.uploadedFiles).flat() : [])
+        .map((f) => f.url).filter(Boolean).slice(0, 5);
+
+    const doc = await UserReviews.create({
+        userId: `${userId}`,
+        bookingId: `${booking._id}`,
+        tripId: `${booking.tripId}`,
+        hostId,
+        rating: stars,
+        review: `${review || ""}`.slice(0, 2000),
+        name: req.user?.name || "",
+        profileImage: req.user?.profileImage || null,
+        tripName: pd?.title || "",
+        location: pd?.location || "",
+        date: new Date(),
+        entityType: "trip",
+        source: "traveller",
+        status: "approved",
+        photos,
+        wouldRecommend: wouldRecommend === true || wouldRecommend === "true" ? true
+            : wouldRecommend === false || wouldRecommend === "false" ? false : null,
+    });
+
+    return res.status(201).json({ message: "Review submitted", data: doc });
+};
+
+// GET /myReviews (auth) — reviews this user has submitted.
+export const getMyReviews = async (req, res) => {
+    const userId = req.user?._id;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    const reviews = await UserReviews.find({ userId: `${userId}`, bookingId: { $ne: null } })
+        .sort({ createdAt: -1 });
+    return res.status(200).json({ data: reviews });
+};
+
+// GET /myPendingReviews (auth) — completed paid bookings with no review yet.
+export const getMyPendingReviews = async (req, res) => {
+    const userId = req.user?._id;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const bookings = await Bookings.find({
+        userId: `${userId}`,
+        paymentStatus: { $in: ["fullPayment", "firstPayment"] },
+    });
+    const done = bookings.filter((b) => bookingCompletion(b).completed);
+    if (!done.length) return res.status(200).json({ data: [] });
+
+    const reviewed = await UserReviews.find({
+        bookingId: { $in: done.map((b) => `${b._id}`) },
+    }).select("bookingId");
+    const reviewedSet = new Set(reviewed.map((r) => `${r.bookingId}`));
+
+    const pending = done
+        .filter((b) => !reviewedSet.has(`${b._id}`))
+        .map((b) => {
+            const pd = parseJson(b.paymentDetail, {});
+            const cd = parseJson(b.cardData, {});
+            return {
+                bookingId: `${b._id}`,
+                tripId: `${b.tripId}`,
+                tripName: pd?.title || "Trip",
+                location: pd?.location || "",
+                bannerImage: pd?.bannerImage || null,
+                endedOn: cd?.cardDate?.endSelectDate || cd?.cardDate?.batchDate || null,
+            };
+        });
+
+    return res.status(200).json({ data: pending });
+};

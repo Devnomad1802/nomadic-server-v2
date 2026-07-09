@@ -91,7 +91,13 @@ export const createHost = async (req, res, next) => {
         tripsHosted,
         travellersHosted,
         successRate,
+        responseRate,
         responseTimeLabel,
+        regionsHosted,
+        faqs,
+        verificationBadges,
+        googleReviewUrl,
+        googlePlaceId,
 
         // Contact
         phoneNumber,
@@ -117,10 +123,13 @@ export const createHost = async (req, res, next) => {
         return next(new BadRequest(" hostName, emailAddress, phoneNumber, bankName, accountHolderName, accountNumber, ifscCode are required"));
       }
 
-      // Check if host already exists with same email or PAN
-      const existingHost = await Host.findOne({
-        $or: [{ emailAddress: emailAddress }, { panNumber: panNumber }],
-      });
+      // Check if host already exists with same email or PAN.
+      // Only match on fields that are actually provided — otherwise an empty
+      // PAN matches every PAN-less host and wrongly reports a duplicate.
+      const dupOr = [];
+      if (emailAddress) dupOr.push({ emailAddress });
+      if (panNumber) dupOr.push({ panNumber });
+      const existingHost = dupOr.length ? await Host.findOne({ $or: dupOr }) : null;
 
       if (existingHost) {
         // If host exists, clean up uploaded files
@@ -234,8 +243,8 @@ export const createHost = async (req, res, next) => {
         location,
         state,
         commissionRate,
-        panNumber,
-        gstNumber,
+        panNumber: panNumber || undefined, // avoid storing "" (breaks sparse unique index)
+        gstNumber: gstNumber || undefined,
         bankName,
         accountHolderName,
         accountNumber,
@@ -258,10 +267,24 @@ export const createHost = async (req, res, next) => {
           : [],
         // Trust & Service Quality
         isVerified,
-        tripsHosted: Number(tripsHosted),
+        tripsHosted: Number(tripsHosted) || 0,
         travellersHosted: Number(travellersHosted) || 0,
-        successRate: Number(successRate),
+        successRate: Number(successRate) || 0,
+        responseRate: Number(responseRate) || 0,
         responseTimeLabel,
+        regionsHosted: Array.isArray(regionsHosted)
+          ? regionsHosted
+          : regionsHosted
+          ? JSON.parse(regionsHosted)
+          : [],
+        faqs: Array.isArray(faqs) ? faqs : faqs ? JSON.parse(faqs) : [],
+        verificationBadges: Array.isArray(verificationBadges)
+          ? verificationBadges
+          : verificationBadges
+          ? JSON.parse(verificationBadges)
+          : [],
+        googleReviewUrl,
+        googlePlaceId,
         // Contact
         whatsapp,
         supportHours,
@@ -651,6 +674,22 @@ export const updateHost = async (req, res, next) => {
         }
       }
 
+      if (updateData.regionsHosted) {
+        if (Array.isArray(updateData.regionsHosted)) {
+          updateData.regionsHosted = updateData.regionsHosted;
+        } else if (typeof updateData.regionsHosted === "string") {
+          updateData.regionsHosted = JSON.parse(updateData.regionsHosted);
+        }
+      }
+
+      if (updateData.faqs && typeof updateData.faqs === "string") {
+        updateData.faqs = JSON.parse(updateData.faqs);
+      }
+
+      if (updateData.verificationBadges && typeof updateData.verificationBadges === "string") {
+        updateData.verificationBadges = JSON.parse(updateData.verificationBadges);
+      }
+
       if (
         updateData.socialMedia &&
         typeof updateData.socialMedia === "string"
@@ -980,6 +1019,30 @@ export const updateHostPartial = async (req, res, next) => {
         } else if (typeof fieldsToUpdate.achievements === "string") {
           fieldsToUpdate.achievements = JSON.parse(fieldsToUpdate.achievements);
         }
+      }
+
+      if (fieldsToUpdate.languages) {
+        if (Array.isArray(fieldsToUpdate.languages)) {
+          fieldsToUpdate.languages = fieldsToUpdate.languages;
+        } else if (typeof fieldsToUpdate.languages === "string") {
+          fieldsToUpdate.languages = JSON.parse(fieldsToUpdate.languages);
+        }
+      }
+
+      if (fieldsToUpdate.regionsHosted) {
+        if (Array.isArray(fieldsToUpdate.regionsHosted)) {
+          fieldsToUpdate.regionsHosted = fieldsToUpdate.regionsHosted;
+        } else if (typeof fieldsToUpdate.regionsHosted === "string") {
+          fieldsToUpdate.regionsHosted = JSON.parse(fieldsToUpdate.regionsHosted);
+        }
+      }
+
+      if (fieldsToUpdate.faqs && typeof fieldsToUpdate.faqs === "string") {
+        fieldsToUpdate.faqs = JSON.parse(fieldsToUpdate.faqs);
+      }
+
+      if (fieldsToUpdate.verificationBadges && typeof fieldsToUpdate.verificationBadges === "string") {
+        fieldsToUpdate.verificationBadges = JSON.parse(fieldsToUpdate.verificationBadges);
       }
 
       if (fieldsToUpdate.metaDescription) {

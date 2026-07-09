@@ -140,6 +140,12 @@ export const AddTrip = async (req, res) => {
       metaDescription,
       seoSlug,
       seoTitle,
+      difficulty,
+      bestSeason,
+      groupSize,
+      importantInfo,
+      termsNotes,
+      faqs,
     } = req.body;
 
     try {
@@ -239,6 +245,12 @@ export const AddTrip = async (req, res) => {
         metaDescription: metaDescription !== undefined ? metaDescription : "",
         seoSlug: seoSlug !== undefined ? seoSlug : "",
         seoTitle: seoTitle !== undefined ? seoTitle : "",
+        difficulty: difficulty || "",
+        bestSeason: bestSeason || "",
+        groupSize: groupSize || "",
+        importantInfo: importantInfo || "",
+        termsNotes: termsNotes || "",
+        faqs: parseArrayField(faqs),
       });
 
       await addTrip.save();
@@ -332,6 +344,12 @@ export const updateTrip = async (req, res) => {
       metaDescription,
       seoSlug,
       seoTitle,
+      difficulty,
+      bestSeason,
+      groupSize,
+      importantInfo,
+      termsNotes,
+      faqs,
     } = req.body;
 
 
@@ -455,6 +473,12 @@ export const updateTrip = async (req, res) => {
       if (enableEnquire !== undefined) updateData.enableEnquire = enableEnquire;
       if (bookings) updateData.bookings = bookings;
       if (tripOff !== undefined) updateData.tripOff = Number(tripOff);
+      if (difficulty !== undefined) updateData.difficulty = difficulty;
+      if (bestSeason !== undefined) updateData.bestSeason = bestSeason;
+      if (groupSize !== undefined) updateData.groupSize = groupSize;
+      if (importantInfo !== undefined) updateData.importantInfo = importantInfo;
+      if (termsNotes !== undefined) updateData.termsNotes = termsNotes;
+      if (faqs !== undefined) updateData.faqs = parseArrayField(faqs);
       // Always include SEO fields if they exist in the request body
       if (req.body.metaDescription !== undefined) {
         updateData.metaDescription = req.body.metaDescription ? String(req.body.metaDescription) : "";

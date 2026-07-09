@@ -889,9 +889,13 @@ export const sendEmailOtpHandler = async (req, res) => {
   const { email } = req.body;
   if (!email) throw new BadRequest('Email is required');
   const { generateEmailOtp, storeEmailOtp, sendEmailOtp } = await import('../services/emailOtpService.js');
+  // Personalise the greeting with the recipient's first name when we already
+  // have an account for this email (new sign-ups fall back to "there").
+  const existingUser = await User.findOne({ email }).select('name').lean();
+  const firstName = existingUser?.name ? String(existingUser.name).trim().split(' ')[0] : '';
   const otp = generateEmailOtp();
   storeEmailOtp(email, otp);
-  await sendEmailOtp(email, otp);
+  await sendEmailOtp(email, otp, firstName);
   res.status(200).json({ success: true, message: 'OTP sent to your email' });
 };
 
