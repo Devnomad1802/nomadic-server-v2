@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { Resend } from "resend";
 import { uploadFilesToS3 } from "../middlewares/index.js";
 import { Host } from "../models/hosts.js";
+import { containsContactInfo, CONTACT_WARNING } from "../utils/contactModeration.js";
 import { User } from "../models/user.js";
 import { Trips } from "../models/trips.js";
 import { Bookings } from "../models/bookings.js";
@@ -300,10 +301,26 @@ export const replyToEnquiry = async (req, res) => {
   if (!enquiry) {
     return res.status(404).json({ success: false, message: "Enquiry not found." });
   }
+  // Platform-mediated chat: block contact-sharing, pause after repeats.
+  const pausedUntil = enquiry?.moderation?.pausedUntil;
+  if (pausedUntil && new Date(pausedUntil) > new Date()) {
+    return res.status(429).json({ success: false, code: "CHAT_PAUSED", message: "Chat is paused for a while after repeated attempts to share contact details. Try again later." });
+  }
+  if (containsContactInfo(message)) {
+    enquiry.moderation = enquiry.moderation || {};
+    enquiry.moderation.violations = (enquiry.moderation.violations || 0) + 1;
+    if (enquiry.moderation.violations >= 3) {
+      enquiry.moderation.pausedUntil = new Date(Date.now() + 60 * 60 * 1000);
+      enquiry.moderation.violations = 0;
+    }
+    await enquiry.save();
+    return res.status(422).json({ success: false, code: "CONTACT_BLOCKED", message: CONTACT_WARNING });
+  }
   enquiry.chat = enquiry.chat || [];
-  enquiry.chat.push({ MessageBy: "host", Message: String(message), timeStamp: new Date() });
+  enquiry.chat.push({ MessageBy: "host", Message: String(message).trim().slice(0, 2000), timeStamp: new Date() });
   enquiry.Reply = String(message);
   enquiry.status = "Replied";
+  enquiry.userUnread = (enquiry.userUnread || 0) + 1;
   await enquiry.save();
   return res.status(200).json({ success: true, data: enquiry });
 };
@@ -505,4 +522,17 @@ export const getMyReviews = async (req, res) => {
     status: { $nin: ["pending", "rejected"] },
   }).sort({ date: -1 });
   return res.status(200).json({ success: true, data: reviews });
+};
+
+// POST /host-portal/me/enquiries/:id/read — clear the host's unread counter.
+export const markEnquiryRead = async (req, res) => {
+  const host = await requireHost(req, res);
+  if (!host) return;
+  const enquiry = await Enquire.findOneAndUpdate(
+    { _id: req.params.id, hostId: String(host._id) },
+    { hostUnread: 0 },
+    { new: true },
+  );
+  if (!enquiry) return res.status(404).json({ success: false, message: "Enquiry not found." });
+  return res.status(200).json({ success: true });
 };
