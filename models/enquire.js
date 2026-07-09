@@ -13,6 +13,14 @@ const userSchema = mongoose.Schema({
   hostId: { type: String, required: false },
   status: { type: String, required: false },
   Date: { type: Date, required: false },
+  // ── Platform chat (host <-> traveller) ──
+  // Unread counters per side + contact-sharing moderation state.
+  hostUnread: { type: Number, default: 0 },
+  userUnread: { type: Number, default: 0 },
+  moderation: {
+    violations: { type: Number, default: 0 },
+    pausedUntil: { type: Date, default: null },
+  },
   chat: [
     {
       MessageBy: {
