@@ -9,6 +9,7 @@ import {
   getMyOverview,
   getMyAnalytics,
   getMyNotifications,
+  getMyReviews,
   markMyNotificationsRead,
   updateMyHost,
   submitMyVerification,
@@ -49,6 +50,7 @@ HostPortalRoutes.post("/me/enquiries/:id/reply", auth, catchAsync(replyToEnquiry
 HostPortalRoutes.post("/me/documents", auth, catchAsync(uploadMyDocuments));
 HostPortalRoutes.get("/me/analytics", auth, catchAsync(getMyAnalytics));
 HostPortalRoutes.get("/me/notifications", auth, catchAsync(getMyNotifications));
+HostPortalRoutes.get("/me/reviews", auth, catchAsync(getMyReviews));
 HostPortalRoutes.post("/me/notifications/read", auth, catchAsync(markMyNotificationsRead));
 
 // Admin-only: approve a host application → create/link login + email credentials.

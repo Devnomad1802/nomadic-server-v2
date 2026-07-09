@@ -491,3 +491,18 @@ export const getMyOverview = async (req, res) => {
     },
   });
 };
+
+// GET /host-portal/me/reviews — public (approved) reviews on this host or
+// any of this host's trips.
+export const getMyReviews = async (req, res) => {
+  const host = await requireHost(req, res);
+  if (!host) return;
+  const { UserReviews } = await import("../models/index.js");
+  const trips = await Trips.find({ host: host._id }).select("_id");
+  const tripIds = trips.map((t) => String(t._id));
+  const reviews = await UserReviews.find({
+    $or: [{ hostId: String(host._id) }, { tripId: { $in: tripIds } }],
+    status: { $nin: ["pending", "rejected"] },
+  }).sort({ date: -1 });
+  return res.status(200).json({ success: true, data: reviews });
+};
