@@ -141,14 +141,39 @@ const hostSchema = mongoose.Schema(
     seoSlug: String,
     metaDescription: String,
 
+    // Login account link (Host Dashboard). Optional + additive: legacy hosts
+    // without a linked User are unaffected; /host-portal/me also falls back
+    // to matching emailAddress against the JWT user's email.
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: false,
+    },
+
+    // Regions the host operates in (Host Dashboard onboarding)
+    regions: [String],
+
     // Status and Verification
     status: {
       type: String,
       enum: ["pending", "approved", "rejected"],
       default: "pending",
     },
+    // Shown to the host when rejected (KYC/verification review)
+    rejectionReason: { type: String, default: "" },
    
     isActive: {
+      type: Boolean,
+      default: true,
+    },
+
+    // Admin controls (additive): hide from public website / block dashboard login.
+    // Both default true so existing hosts are unaffected.
+    showOnWebsite: {
+      type: Boolean,
+      default: true,
+    },
+    dashboardAccess: {
       type: Boolean,
       default: true,
     },

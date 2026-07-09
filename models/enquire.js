@@ -7,6 +7,10 @@ const userSchema = mongoose.Schema({
   Message: { type: String, required: false },
   Reply: { type: String, required: false },
   userId: { type: String, required: false },
+  // Optional trip/host linkage (Host Dashboard). Additive — legacy enquiries
+  // without these fields remain admin-only.
+  tripId: { type: String, required: false },
+  hostId: { type: String, required: false },
   status: { type: String, required: false },
   Date: { type: Date, required: false },
   chat: [

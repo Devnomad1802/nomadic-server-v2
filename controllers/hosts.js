@@ -344,6 +344,9 @@ export const getAllHosts = async (req, res) => {
 
   // Build filter object
   const filter = {};
+  // Public listing hides admin-hidden hosts; the admin table passes
+  // includeHidden=true to manage them.
+  if (req.query.includeHidden !== "true") filter.showOnWebsite = { $ne: false };
   // if (status) filter.status = status;
   // if (isVerified !== undefined) filter.isVerified = isVerified === 'true';
   // if (isActive !== undefined) filter.isActive = isActive === 'true';
@@ -364,8 +367,10 @@ export const getAllHosts = async (req, res) => {
   const sort = {};
   sort[sortBy] = sortOrder === "desc" ? -1 : 1;
 
-  // Execute query with pagination
+  // Execute query with pagination. Sensitive fields (bank/KYC/documents) are
+  // excluded from this public listing; admin edit uses getHostById (full doc).
   const hosts = await Host.find(filter)
+    .select("-bankName -accountNumber -ifscCode -accountHolderName -panNumber -gstNumber -documents -contact_id -fund_account_id")
     .sort(sort)
     .limit(limit * 1)
     .skip((page - 1) * limit)
@@ -1154,10 +1159,29 @@ export const updateHostStatus = async (req, res) => {
   if (isVerified !== undefined) {
     updateData.isVerified = isVerified;
   }
+  // KYC review: persist a rejection reason (shown in the Host Dashboard);
+  // approval marks verified + clears any old reason.
+  if (req.body.rejectionReason !== undefined) {
+    updateData.rejectionReason = req.body.rejectionReason;
+  }
+  if (status === "approved") {
+    updateData.isVerified = isVerified !== undefined ? isVerified : true;
+    updateData.rejectionReason = "";
+  }
 
   const updatedHost = await Host.findByIdAndUpdate(id, updateData, {
     new: true,
   });
+
+  // Notify the host about the verification outcome (fire-and-forget).
+  try {
+    const { notifyHost } = await import("./hostPortal.js");
+    if (status === "approved") {
+      notifyHost(id, "account", "Verification approved", "Your host account is verified — your dashboard is unlocked.");
+    } else if (status === "rejected") {
+      notifyHost(id, "account", "Verification rejected", req.body.rejectionReason || "Please review your details and resubmit.");
+    }
+  } catch { /* non-fatal */ }
 
   res.status(200).json({
     success: true,
@@ -1195,6 +1219,7 @@ export const getHostsBySpecialty = async (req, res) => {
     specialties: { $regex: specialty, $options: "i" }, // Case-insensitive search
     status: "approved",
     isActive: true,
+    showOnWebsite: { $ne: false },
   };
 
   const hosts = await Host.find(filter)
@@ -1229,6 +1254,7 @@ export const getHostsByLocation = async (req, res) => {
     ],
     status: "approved",
     isActive: true,
+    showOnWebsite: { $ne: false },
   };
 
   const hosts = await Host.find(filter)
@@ -1682,4 +1708,20 @@ export const getTripsByHost = async (req, res) => {
     console.error("Error retrieving trips by host:", error);
     return res.status(500).json({ error: "Internal server error" });
   }
+};
+
+// ─── Admin controls: website visibility + dashboard access (additive) ───
+// PATCH /host/:id/flags  body: { showOnWebsite?: boolean, dashboardAccess?: boolean }
+export const updateHostFlags = async (req, res) => {
+  const { id } = req.params;
+  const updates = {};
+  if (typeof req.body?.showOnWebsite === "boolean") updates.showOnWebsite = req.body.showOnWebsite;
+  if (typeof req.body?.dashboardAccess === "boolean") updates.dashboardAccess = req.body.dashboardAccess;
+  if (!Object.keys(updates).length) {
+    return res.status(400).json({ success: false, message: "Provide showOnWebsite and/or dashboardAccess (boolean)." });
+  }
+  const host = await Host.findByIdAndUpdate(id, updates, { new: true })
+    .select("_id hostName showOnWebsite dashboardAccess");
+  if (!host) return res.status(404).json({ success: false, message: "Host not found" });
+  return res.status(200).json({ success: true, data: host });
 };

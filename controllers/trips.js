@@ -179,6 +179,23 @@ export const AddTrip = async (req, res) => {
       const normalizedRatings = parseArrayField(ratings);
       const normalizedReviews = parseArrayField(reviews);
 
+      // Host submissions are constrained server-side: forced to the caller's
+      // own Host record + Status "pending" (can't self-approve or post for
+      // another host). Admins keep full control.
+      let effectiveHost = host;
+      let effectiveStatus = req.body.Status;
+      if (String(req.user?.role).toLowerCase() === "host") {
+        const { Host } = await import("../models/hosts.js");
+        const ownHost = await Host.findOne({
+          $or: [{ user: req.user._id }, { emailAddress: req.user.email }],
+        });
+        if (!ownHost) {
+          return res.status(403).json({ error: "No host profile linked to this account." });
+        }
+        effectiveHost = ownHost._id;
+        effectiveStatus = "pending";
+      }
+
       const addTrip = new Trips({
         title,
         endSelectDate,
@@ -195,7 +212,11 @@ export const AddTrip = async (req, res) => {
         price,
         strikePrice,
         commissionRate,
-        host,
+        host: effectiveHost,
+        // Host proposals are forced pending server-side (see above). Admin-
+        // created trips send no Status (undefined → not gated), so the
+        // existing admin flow is unaffected.
+        Status: effectiveStatus,
         nights,
         type,
         numberOfDays,
@@ -557,8 +578,9 @@ export const GetAllTrips = async (req, res) => {
 };
 export const GetAllTripsForUser = async (req, res) => {
   try {
-    // Fetch all trips from the database with host details populated
-    const trips = await Trips.find({ enableBooking: true })
+    // Public listing: hide host proposals awaiting/denied admin approval.
+    // $nin also matches docs without a Status field, so legacy/admin trips stay visible.
+    const trips = await Trips.find({ enableBooking: true, Status: { $nin: ["pending", "rejected"] } })
       .populate('host')
       .sort({ date: -1 });
     return res
@@ -572,7 +594,7 @@ export const GetAllTripsForUser = async (req, res) => {
 };
 export const GetTrendingTrips = async (req, res) => {
   try {
-    const trips = await Trips.find({ Trending: true })
+    const trips = await Trips.find({ Trending: true, Status: { $nin: ["pending", "rejected"] } })
       .populate('host')
       .sort({ date: -1 });
     return res
@@ -588,6 +610,9 @@ export const GetTripsById = async (req, res) => {
     const trips = await Trips.find({ _id: req.body._id })
       .populate('host')
       .sort({ date: -1 });
+
+    // Lightweight analytics: count detail views (fire-and-forget, response unchanged)
+    Trips.updateOne({ _id: req.body._id }, { $inc: { viewCount: 1 } }).catch(() => {});
     return res
       .status(200)
       .json({ message: "Trip retrieved successfully", data: trips });
@@ -620,7 +645,8 @@ export const GetTripsByCagtegory = async (req, res) => {
     }
 
     // Fetch all trips and filter in memory to handle both array format and legacy comma-separated format
-    const allTrips = await Trips.find({})
+    // (exclude host proposals awaiting/denied admin approval)
+    const allTrips = await Trips.find({ Status: { $nin: ["pending", "rejected"] } })
       .populate('host')
       .sort({ date: -1 });
 
@@ -708,8 +734,9 @@ export const GetAllTripsWithFilter = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
+    const approvalGate = { Status: { $nin: ["pending", "rejected"] } };
     const trips = await Trips.find({
-      $or: [{ status: status }, { type: type }],
+      $and: [{ $or: [{ status: status }, { type: type }] }, approvalGate],
     })
       .populate('host')
       .limit(limit)
@@ -717,7 +744,7 @@ export const GetAllTripsWithFilter = async (req, res) => {
       .sort({ date: -1 });
     // Get the total count of trips that match the filter
     const totalTrips = await Trips.countDocuments({
-      $or: [{ Status: status }, { type: type }],
+      $and: [{ $or: [{ Status: status }, { type: type }] }, approvalGate],
     });
 
     // Send response with trip data and pagination info
@@ -731,6 +758,53 @@ export const GetAllTripsWithFilter = async (req, res) => {
   } catch (error) {
     // Handle any errors
     console.error("Error retrieving trips:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+// ------------------------- update trip approval status (admin) -------------------------
+// Admin review of host trip proposals: approve / reject / request changes.
+// Approving sets the trip publicly bookable; the trip keeps its host link.
+export const updateTripStatus = async (req, res) => {
+  try {
+    const { tripId, _id, Status, adminFeedback } = req.body;
+    const id = tripId || _id;
+    if (!id) {
+      return res.status(400).json({ error: "Trip ID is required" });
+    }
+    const allowed = ["approved", "rejected", "changes_requested", "pending"];
+    if (!allowed.includes(Status)) {
+      return res.status(400).json({ error: "Invalid Status value" });
+    }
+    const update = { Status };
+    if (adminFeedback !== undefined) update.adminFeedback = adminFeedback;
+    if (Status === "approved") update.enableBooking = true; // goes live on approval
+    const trip = await Trips.findByIdAndUpdate(id, update, { new: true }).populate("host");
+    if (!trip) {
+      return res.status(404).json({ error: "Trip not found" });
+    }
+
+    // Notify the owning host about the review outcome (fire-and-forget).
+    if (trip.host?._id) {
+      const { notifyHost } = await import("./hostPortal.js");
+      const titles = {
+        approved: "Trip approved",
+        rejected: "Trip rejected",
+        changes_requested: "Changes requested",
+        pending: "Trip back in review",
+      };
+      const bodies = {
+        approved: `"${trip.title}" has been approved and is now live.`,
+        rejected: `"${trip.title}" was rejected.${adminFeedback ? ` Reason: ${adminFeedback}` : ""}`,
+        changes_requested: `"${trip.title}" needs changes.${adminFeedback ? ` ${adminFeedback}` : ""}`,
+        pending: `"${trip.title}" is back in review.`,
+      };
+      notifyHost(trip.host._id, `trip_${Status}`, titles[Status], bodies[Status], { tripId: String(trip._id) });
+    }
+
+    return res.status(200).json({ message: "Trip status updated", data: trip });
+  } catch (error) {
+    console.error("Error updating trip status:", error);
     return res.status(500).json({ error: "Internal server error" });
   }
 };
