@@ -424,7 +424,7 @@ export const getMyOverview = async (req, res) => {
     (t.Status ?? "") === "approved" || (!t.Status && t.enableBooking);
 
   const [bookings, payouts] = await Promise.all([
-    Bookings.find({ tripId: { $in: tripIds } }).select("total paymentStatus status DateOfBooking"),
+    Bookings.find({ tripId: { $in: tripIds } }).select("total paymentStatus status DateOfBooking paymentDetail travellersCount"),
     Payout.find({ host: host._id }).select("amount status createdAt"),
   ]);
 
@@ -445,7 +445,48 @@ export const getMyOverview = async (req, res) => {
         pending: trips.filter((t) => ["pending", "changes_requested"].includes(t.Status ?? "")).length,
         rejected: trips.filter((t) => (t.Status ?? "") === "rejected").length,
       },
-      bookings: { total: bookings.length, grossRevenue },
+      bookings: {
+        total: bookings.length,
+        grossRevenue,
+        // Monthly gross for the revenue chart (last 6 calendar months).
+        byMonth: (() => {
+          const out = [];
+          const now = new Date();
+          for (let i = 5; i >= 0; i--) {
+            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            const label = d.toLocaleString("en-IN", { month: "short" });
+            const value = bookings
+              .filter((b) => {
+                const bd = new Date(b.DateOfBooking);
+                return !isNaN(bd) && bd.getFullYear() === d.getFullYear() && bd.getMonth() === d.getMonth();
+              })
+              .reduce((s, b) => s + (Number(b.total) || 0), 0);
+            out.push({ month: label, value });
+          }
+          return out;
+        })(),
+        byStatus: {
+          full: bookings.filter((b) => b.paymentStatus === "fullPayment").length,
+          partial: bookings.filter((b) => b.paymentStatus === "firstPayment").length,
+          other: bookings.filter((b) => !["fullPayment", "firstPayment"].includes(b.paymentStatus)).length,
+        },
+      },
+      // Latest bookings for the Recent Activity table.
+      recentActivity: bookings
+        .slice()
+        .sort((a, b) => new Date(b.DateOfBooking) - new Date(a.DateOfBooking))
+        .slice(0, 5)
+        .map((b) => {
+          let title = "Trip";
+          try { title = JSON.parse(b.paymentDetail || "{}")?.title || "Trip"; } catch { /* noop */ }
+          return {
+            trip: title,
+            date: b.DateOfBooking,
+            amount: Number(b.total) || 0,
+            status: b.paymentStatus === "fullPayment" ? "Paid" : b.paymentStatus === "firstPayment" ? "Partial" : "Pending",
+            travellers: Number(b.travellersCount) || 1,
+          };
+        }),
       payouts: { count: payouts.length, paidOut, pendingPayout },
     },
   });
