@@ -30,6 +30,21 @@ const userReviewsSchema = mongoose.Schema({
     // For cached Google reviews: stable id (dedupe) + author profile link.
     externalId: { type: String, default: null },
     googleAuthorUrl: { type: String, default: null },
-});
+
+    // --- Post-trip review system ---
+    // Ties a traveller review to the exact booking that earned it.
+    bookingId: { type: String, default: null },
+    // Moderation: approved by default; admin can reject to hide.
+    status: {
+        type: String,
+        enum: ["pending", "approved", "rejected"],
+        default: "approved",
+    },
+    photos: [{ type: String }],
+    wouldRecommend: { type: Boolean, default: null },
+}, { timestamps: true });
+
+// One review per booking (sparse: legacy rows without bookingId unaffected).
+userReviewsSchema.index({ bookingId: 1 }, { unique: true, sparse: true });
 
 export const UserReviews = mongoose.model("UserReviews", userReviewsSchema);
