@@ -344,6 +344,9 @@ export const getAllHosts = async (req, res) => {
 
   // Build filter object
   const filter = {};
+  // Public listing hides admin-hidden hosts; the admin table passes
+  // includeHidden=true to manage them.
+  if (req.query.includeHidden !== "true") filter.showOnWebsite = { $ne: false };
   // if (status) filter.status = status;
   // if (isVerified !== undefined) filter.isVerified = isVerified === 'true';
   // if (isActive !== undefined) filter.isActive = isActive === 'true';
@@ -1216,6 +1219,7 @@ export const getHostsBySpecialty = async (req, res) => {
     specialties: { $regex: specialty, $options: "i" }, // Case-insensitive search
     status: "approved",
     isActive: true,
+    showOnWebsite: { $ne: false },
   };
 
   const hosts = await Host.find(filter)
@@ -1250,6 +1254,7 @@ export const getHostsByLocation = async (req, res) => {
     ],
     status: "approved",
     isActive: true,
+    showOnWebsite: { $ne: false },
   };
 
   const hosts = await Host.find(filter)
@@ -1703,4 +1708,20 @@ export const getTripsByHost = async (req, res) => {
     console.error("Error retrieving trips by host:", error);
     return res.status(500).json({ error: "Internal server error" });
   }
+};
+
+// ─── Admin controls: website visibility + dashboard access (additive) ───
+// PATCH /host/:id/flags  body: { showOnWebsite?: boolean, dashboardAccess?: boolean }
+export const updateHostFlags = async (req, res) => {
+  const { id } = req.params;
+  const updates = {};
+  if (typeof req.body?.showOnWebsite === "boolean") updates.showOnWebsite = req.body.showOnWebsite;
+  if (typeof req.body?.dashboardAccess === "boolean") updates.dashboardAccess = req.body.dashboardAccess;
+  if (!Object.keys(updates).length) {
+    return res.status(400).json({ success: false, message: "Provide showOnWebsite and/or dashboardAccess (boolean)." });
+  }
+  const host = await Host.findByIdAndUpdate(id, updates, { new: true })
+    .select("_id hostName showOnWebsite dashboardAccess");
+  if (!host) return res.status(404).json({ success: false, message: "Host not found" });
+  return res.status(200).json({ success: true, data: host });
 };

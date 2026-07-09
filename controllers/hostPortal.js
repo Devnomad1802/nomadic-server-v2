@@ -55,6 +55,16 @@ async function requireHost(req, res) {
     });
     return null;
   }
+  // Admin kill-switch: dashboard access disabled (data intact, login blocked).
+  if (host.dashboardAccess === false) {
+    res.status(403).json({
+      success: false,
+      code: "DASHBOARD_DISABLED",
+      message:
+        "Your dashboard access is currently disabled. Please contact Nomadic Townies support.",
+    });
+    return null;
+  }
   return host;
 }
 

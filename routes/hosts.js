@@ -17,6 +17,7 @@ import {
   deleteHostGalleryImage,
   uploadHostGalleryImage,
   getTripsByHost,
+  updateHostFlags
 } from "../controllers/hosts.js";
 import { catchAsync, authRole } from "../middlewares/index.js";
 
@@ -37,6 +38,7 @@ hostRoutes.get("/location/:location", catchAsync(getHostsByLocation));
 // Status + management writes are Admin-only.
 hostRoutes.patch("/:id/status", ...adminOnly, catchAsync(updateHostStatus));
 hostRoutes.patch("/:id/toggle-status", ...adminOnly, catchAsync(toggleHostStatus));
+hostRoutes.patch("/:id/flags", ...adminOnly, catchAsync(updateHostFlags));
 
 // Gallery management (Admin-only)
 hostRoutes.post("/:id/gallery", ...adminOnly, catchAsync(addGalleryImages));

@@ -166,6 +166,17 @@ const hostSchema = mongoose.Schema(
       type: Boolean,
       default: true,
     },
+
+    // Admin controls (additive): hide from public website / block dashboard login.
+    // Both default true so existing hosts are unaffected.
+    showOnWebsite: {
+      type: Boolean,
+      default: true,
+    },
+    dashboardAccess: {
+      type: Boolean,
+      default: true,
+    },
   },
   {
     timestamps: true,
