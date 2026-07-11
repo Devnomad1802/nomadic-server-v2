@@ -1,5 +1,23 @@
 import { Host } from "../models/hosts.js";
 import { Trips } from "../models/trips.js";
+import { UserReviews } from "../models/UserReviews.js";
+
+// Average rating + count per host, from that host's own visible reviews only
+// (entityType "host", not pending/rejected). Never mixes trip or brand reviews.
+// Returns a map { hostId: { rating: Number|null, reviewCount: Number } }.
+async function hostRatingMap(hostIds) {
+  const ids = (hostIds || []).map((x) => `${x}`).filter(Boolean);
+  if (!ids.length) return {};
+  const rows = await UserReviews.aggregate([
+    { $match: { hostId: { $in: ids }, entityType: "host", status: { $nin: ["pending", "rejected"] } } },
+    { $group: { _id: "$hostId", avg: { $avg: "$rating" }, count: { $sum: 1 } } },
+  ]);
+  const map = {};
+  rows.forEach((r) => {
+    map[`${r._id}`] = { rating: Math.round((Number(r.avg) || 0) * 10) / 10, reviewCount: r.count };
+  });
+  return map;
+}
 import {
   BadRequest,
   CustomError,
@@ -379,9 +397,19 @@ export const getAllHosts = async (req, res) => {
   // Get total count for pagination
   const total = await Host.countDocuments(filter);
 
+  // Attach the real review-derived rating (null = no ratings yet).
+  const ratings = await hostRatingMap(hosts.map((h) => h._id));
+  const data = hosts.map((h) => {
+    const o = h.toObject();
+    const r = ratings[`${h._id}`];
+    o.rating = r ? r.rating : null;
+    o.reviewCount = r ? r.reviewCount : 0;
+    return o;
+  });
+
   res.status(200).json({
     success: true,
-    data: hosts,
+    data,
     pagination: {
       currentPage: parseInt(page),
       totalPages: Math.ceil(total / limit),
@@ -400,9 +428,15 @@ export const getHostById = async (req, res) => {
     throw new CustomError("Host not found", 404);
   }
 
+  const ratings = await hostRatingMap([host._id]);
+  const r = ratings[`${host._id}`];
+  const data = host.toObject();
+  data.rating = r ? r.rating : null;
+  data.reviewCount = r ? r.reviewCount : 0;
+
   res.status(200).json({
     success: true,
-    data: host,
+    data,
   });
 };
 
