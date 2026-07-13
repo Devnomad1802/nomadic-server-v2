@@ -129,7 +129,9 @@ export const createSecureOrder = async (req, res) => {
       seoSlug: trip.seoSlug || "",
       host: h
         ? {
+            _id: `${h._id}`,
             name: h.hostTitle || h.hostName || "",
+            bio: h.shortBio || h.tagline || "",
             location: h.hqLocation || h.location || "",
             verified: !!h.isVerified,
             logo: h.brandingLogo || null,
@@ -395,7 +397,7 @@ export const confirmBalancePayment = async (req, res) => {
           bannerImage: trip.bannerImage || trip.cardImage || pd.bannerImage || null,
           seoSlug: trip.seoSlug || pd.seoSlug || "",
           host: h
-            ? { name: h.hostTitle || h.hostName || "", location: h.hqLocation || h.location || "", verified: !!h.isVerified, logo: h.brandingLogo || null }
+            ? { _id: `${h._id}`, name: h.hostTitle || h.hostName || "", bio: h.shortBio || h.tagline || "", location: h.hqLocation || h.location || "", verified: !!h.isVerified, logo: h.brandingLogo || null }
             : (pd.host || null),
         });
       }
