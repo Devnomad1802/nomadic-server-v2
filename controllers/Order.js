@@ -129,7 +129,9 @@ export const createSecureOrder = async (req, res) => {
       seoSlug: trip.seoSlug || "",
       host: h
         ? {
+            _id: `${h._id}`,
             name: h.hostTitle || h.hostName || "",
+            bio: h.shortBio || h.tagline || "",
             location: h.hqLocation || h.location || "",
             verified: !!h.isVerified,
             logo: h.brandingLogo || null,
@@ -246,6 +248,19 @@ export const confirmBooking = async (req, res) => {
       const paidNow = Number(booking.orderAmount) || 0;
       const fullAmt = Number(booking.fullTripAmount) || 0;
       const remaining = booking.paymentType === "firstPayment" ? Math.max(0, fullAmt - paidNow) : 0;
+      // Platform rule: balance is due 15 days before the trip departs.
+      let balanceDue = "";
+      try {
+        const cdSnap = JSON.parse(booking.cardData || "{}");
+        const dep = cdSnap?.cardDate?.batchDate || booking.batchDate;
+        if (remaining > 0 && dep) {
+          const d = new Date(dep);
+          if (!isNaN(d)) {
+            d.setDate(d.getDate() - 15);
+            balanceDue = d.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+          }
+        }
+      } catch { /* noop */ }
       await sendBookingConfirmationEmail(recipient, {
         customer_name: lead?.name || booking.userName || buyer?.name || "",
         booking_id: booking.bookingId || String(booking._id),
@@ -259,6 +274,7 @@ export const confirmBooking = async (req, res) => {
         booking_status: remaining > 0 ? "Confirmed (deposit paid)" : "Confirmed",
         amount_paid: paidNow,
         remaining_amount: remaining,
+        balance_due_date: balanceDue,
         payment_status: booking.paymentType === "firstPayment" ? "Partially paid" : "Fully paid",
         transaction_id: booking.razorpayPaymentId || "",
         support_email: SUPPORT_EMAIL,
@@ -395,7 +411,7 @@ export const confirmBalancePayment = async (req, res) => {
           bannerImage: trip.bannerImage || trip.cardImage || pd.bannerImage || null,
           seoSlug: trip.seoSlug || pd.seoSlug || "",
           host: h
-            ? { name: h.hostTitle || h.hostName || "", location: h.hqLocation || h.location || "", verified: !!h.isVerified, logo: h.brandingLogo || null }
+            ? { _id: `${h._id}`, name: h.hostTitle || h.hostName || "", bio: h.shortBio || h.tagline || "", location: h.hqLocation || h.location || "", verified: !!h.isVerified, logo: h.brandingLogo || null }
             : (pd.host || null),
         });
       }
