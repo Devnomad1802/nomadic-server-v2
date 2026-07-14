@@ -3,6 +3,7 @@ import Razorpay from "razorpay";
 import crypto from "crypto";
 import { BadRequest, CustomError } from "../middlewares/index.js";
 import { Bookings, Trips, User } from "../models/index.js";
+import { isPartialAllowed, fmtBalanceDueDate } from "../utils/partialPayment.js";
 
 const { RAZORPAY_KEY_SECRET, RAZORPAY_KEY_ID } = process.env;
 
@@ -80,22 +81,9 @@ export const createSecureOrder = async (req, res) => {
       return res.status(400).json({ error: "Invalid selection — choose at least one traveller." });
     }
 
-    // Partial payment (book-now-pay-later) charges firstBookingPrice; else full.
-    const wantPartial = paymentType === "firstPayment";
-    const firstPrice = Math.round(Number(trip.firstBookingPrice) || 0);
-    const chargeNow = wantPartial && firstPrice > 0 && firstPrice < calc.total ? firstPrice : calc.total;
-    const finalType = chargeNow === calc.total ? "full" : "firstPayment";
-
-    const razorpay = new Razorpay({ key_id: RAZORPAY_KEY_ID, key_secret: RAZORPAY_KEY_SECRET });
-    const order = await razorpay.orders.create({
-      amount: chargeNow * 100, // paise
-      currency: "INR",
-      receipt: `rcpt_${Date.now()}`, // Razorpay limit: <= 40 chars
-      notes: { tripId: `${tripId}`, userId: `${userId}` },
-    });
-    if (!order?.id) return res.status(502).json({ error: "Could not create payment order" });
-
     // Date snapshot for the success page (mirrors old cardData shape).
+    // Parsed BEFORE the partial decision — the batch departure gates the
+    // 15-day rule server-side (never trust the client's paymentType alone).
     let batchDate;
     let endSelectDate;
     let numberOfDays;
@@ -107,6 +95,29 @@ export const createSecureOrder = async (req, res) => {
       endSelectDate = ed?.[batchIndex]?.EndBatchDate;
       numberOfDays = nd?.[batchIndex]?.selectDays;
     } catch { /* noop */ }
+
+    // Partial payment (book-now-pay-later) charges firstBookingPrice; else full.
+    // Server is the source of truth: honours the admin toggle AND the 15-day
+    // cutoff, so a crafted "firstPayment" on a disabled/too-soon trip falls back
+    // to full instead of under-charging.
+    const wantPartial = paymentType === "firstPayment";
+    const firstPrice = Math.round(Number(trip.firstBookingPrice) || 0);
+    const partialAllowed = isPartialAllowed({
+      partialPaymentEnabled: trip.partialPaymentEnabled,
+      firstBookingPrice: trip.firstBookingPrice,
+      departure: batchDate,
+    });
+    const chargeNow = wantPartial && partialAllowed && firstPrice > 0 && firstPrice < calc.total ? firstPrice : calc.total;
+    const finalType = chargeNow === calc.total ? "full" : "firstPayment";
+
+    const razorpay = new Razorpay({ key_id: RAZORPAY_KEY_ID, key_secret: RAZORPAY_KEY_SECRET });
+    const order = await razorpay.orders.create({
+      amount: chargeNow * 100, // paise
+      currency: "INR",
+      receipt: `rcpt_${Date.now()}`, // Razorpay limit: <= 40 chars
+      notes: { tripId: `${tripId}`, userId: `${userId}` },
+    });
+    if (!order?.id) return res.status(502).json({ error: "Could not create payment order" });
 
     const cardData = {
       numberOfTravelers: calc.travellers,
@@ -125,6 +136,7 @@ export const createSecureOrder = async (req, res) => {
       pickUp: trip.pickUp,
       dropOff: trip.dropOff,
       firstBookingPrice: trip.firstBookingPrice,
+      partialPaymentEnabled: partialAllowed, // server's verdict for this batch
       bannerImage: trip.bannerImage || trip.cardImage || null,
       seoSlug: trip.seoSlug || "",
       host: h
@@ -253,13 +265,7 @@ export const confirmBooking = async (req, res) => {
       try {
         const cdSnap = JSON.parse(booking.cardData || "{}");
         const dep = cdSnap?.cardDate?.batchDate || booking.batchDate;
-        if (remaining > 0 && dep) {
-          const d = new Date(dep);
-          if (!isNaN(d)) {
-            d.setDate(d.getDate() - 15);
-            balanceDue = d.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
-          }
-        }
+        if (remaining > 0) balanceDue = fmtBalanceDueDate(dep);
       } catch { /* noop */ }
       await sendBookingConfirmationEmail(recipient, {
         customer_name: lead?.name || booking.userName || buyer?.name || "",

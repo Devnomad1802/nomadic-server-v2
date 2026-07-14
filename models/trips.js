@@ -23,6 +23,9 @@ const userSchema = mongoose.Schema({
   selectDate: { type: String, default: false },
   date: { type: Date, required: false },
   firstBookingPrice: { type: String, required: false },
+  // Partial payment (book-now-pay-later). Undefined on legacy trips → derive
+  // from firstBookingPrice > 0. Explicit false forces full payment.
+  partialPaymentEnabled: { type: Boolean, required: false },
   Inclusion: { type: String, default: "" },
   Exclusion: { type: String, default: "" },
   ThingsToCarry: { type: String, default: "" },

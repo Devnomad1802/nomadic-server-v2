@@ -121,6 +121,7 @@ export const AddTrip = async (req, res) => {
       selectDate,
       date,
       firstBookingPrice,
+      partialPaymentEnabled,
       Inclusion,
       Exclusion,
       ThingsToCarry,
@@ -223,6 +224,7 @@ export const AddTrip = async (req, res) => {
         numberOfSeats,
         selectDate,
         firstBookingPrice,
+        partialPaymentEnabled: partialPaymentEnabled === "true" || partialPaymentEnabled === true,
         date,
         addsection,
         Inclusion,
@@ -326,6 +328,7 @@ export const updateTrip = async (req, res) => {
       selectDate,
       date,
       firstBookingPrice,
+      partialPaymentEnabled,
       Inclusion,
       Exclusion,
       ThingsToCarry,
@@ -455,6 +458,8 @@ export const updateTrip = async (req, res) => {
       if (selectDate) updateData.selectDate = selectDate;
       if (date) updateData.date = date;
       if (firstBookingPrice) updateData.firstBookingPrice = firstBookingPrice;
+      if (partialPaymentEnabled !== undefined)
+        updateData.partialPaymentEnabled = partialPaymentEnabled === "true" || partialPaymentEnabled === true;
       if (addsection) updateData.addsection = addsection;
       if (Inclusion) updateData.Inclusion = Inclusion;
       if (Exclusion) updateData.Exclusion = Exclusion;
