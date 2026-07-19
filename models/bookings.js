@@ -59,6 +59,10 @@ const userSchema = mongoose.Schema({
   travellersCount: { type: Number, required: false },
   paymentType: { type: String, required: false },    // "full" | "firstPayment"
 
+  // ── Invoice (assigned once, after the first verified payment) ──
+  invoiceNumber: { type: String, required: false },
+  invoiceDate: { type: Date, required: false },
+
   // ── Balance top-up (paying remaining of a firstPayment booking) ──
   balanceOrderId: { type: String, required: false },
   balanceAmount: { type: Number, required: false },
