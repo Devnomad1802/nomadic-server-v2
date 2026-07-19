@@ -7,6 +7,19 @@ import { isPartialAllowed, fmtBalanceDueDate } from "../utils/partialPayment.js"
 
 const { RAZORPAY_KEY_SECRET, RAZORPAY_KEY_ID } = process.env;
 
+// Best-effort invoice PDF for email attachment; never breaks the flow.
+const invoiceAttachment = async (booking, user) => {
+  try {
+    if (!booking?.invoiceNumber) return [];
+    const { buildInvoicePdf } = await import("../services/invoicePdf.js");
+    const pdf = await buildInvoicePdf(booking, user);
+    return [{ filename: `${booking.invoiceNumber}.pdf`, content: pdf.toString("base64") }];
+  } catch (e) {
+    console.error("invoice attachment failed:", e?.message || e);
+    return [];
+  }
+};
+
 // ─────────────────────────────────────────────────────────────
 // C1/C2 — Secure payment flow
 // The server, never the browser, decides the price and confirms payment.
@@ -242,6 +255,16 @@ export const confirmBooking = async (req, res) => {
     if (dietary !== undefined) booking.dietary = dietary;
     if (roomType !== undefined) booking.roomType = roomType;
     booking.DateOfBooking = new Date();
+    // Invoice number: assigned exactly once, only after a VERIFIED payment.
+    if (!booking.invoiceNumber) {
+      try {
+        const { nextInvoiceNumber } = await import("../utils/invoiceNumber.js");
+        booking.invoiceNumber = await nextInvoiceNumber();
+        booking.invoiceDate = new Date();
+      } catch (invErr) {
+        console.error("invoice number assignment failed:", invErr?.message || invErr);
+      }
+    }
     await booking.save();
 
     // Send the booking confirmation email (best-effort — never blocks the
@@ -285,7 +308,7 @@ export const confirmBooking = async (req, res) => {
         transaction_id: booking.razorpayPaymentId || "",
         support_email: SUPPORT_EMAIL,
         view_booking_url: `${process.env.CLIENT_URL || "https://nomadictownies.com"}/profile`,
-      });
+      }, await invoiceAttachment(booking, buyer));
     } catch (mailErr) {
       console.error("booking confirmation email error:", mailErr?.message || mailErr);
     }
@@ -454,7 +477,7 @@ export const confirmBalancePayment = async (req, res) => {
         transaction_id: booking.razorpayPaymentId || "",
         support_email: SUPPORT_EMAIL,
         view_booking_url: `${process.env.CLIENT_URL || "https://nomadictownies.com"}/profile`,
-      });
+      }, await invoiceAttachment(booking, buyer));
     } catch (mailErr) {
       console.error("balance confirmation email error:", mailErr?.message || mailErr);
     }
@@ -543,5 +566,37 @@ export const validate = async (req, res) => {
   } catch (error) {
     console.log("Validation error:", error);
     throw new BadRequest(error?.message || "Payment validation failed");
+  }
+};
+
+// ── Invoice download: owner or Admin only; always renders the LATEST saved
+// booking (so a partial→full transition automatically reflects). ──
+export const downloadInvoice = async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+    const booking = await Bookings.findById(bookingId);
+    if (!booking) return res.status(404).json({ error: "Booking not found" });
+    const isOwner = `${booking.userId}` === `${req.user?._id}`;
+    const isAdmin = String(req.user?.role || "").toLowerCase() === "admin";
+    if (!isOwner && !isAdmin) return res.status(403).json({ error: "Not allowed" });
+    if (!["firstPayment", "fullPayment"].includes(booking.paymentStatus)) {
+      return res.status(400).json({ error: "No invoice — booking is not paid" });
+    }
+    // Legacy paid bookings predating the invoice system: assign a number now.
+    if (!booking.invoiceNumber) {
+      const { nextInvoiceNumber } = await import("../utils/invoiceNumber.js");
+      booking.invoiceNumber = await nextInvoiceNumber();
+      booking.invoiceDate = new Date();
+      await booking.save();
+    }
+    const buyer = await User.findById(booking.userId).select("name email phone").lean();
+    const { buildInvoicePdf } = await import("../services/invoicePdf.js");
+    const pdf = await buildInvoicePdf(booking, buyer);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${booking.invoiceNumber}.pdf"`);
+    return res.send(pdf);
+  } catch (e) {
+    console.error("downloadInvoice error:", e?.message || e);
+    return res.status(500).json({ error: "Could not generate invoice" });
   }
 };

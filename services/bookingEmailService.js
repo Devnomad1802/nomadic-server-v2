@@ -214,7 +214,7 @@ export const buildBookingConfirmationHtml = (data = {}) => {
  * Send the booking confirmation email. Never throws — logs and resolves false
  * on failure so the booking/payment flow is never broken by email issues.
  */
-export const sendBookingConfirmationEmail = async (to, data = {}) => {
+export const sendBookingConfirmationEmail = async (to, data = {}, attachments = []) => {
   try {
     if (!to) {
       console.warn("sendBookingConfirmationEmail skipped — no recipient email", { booking_id: data?.booking_id });
@@ -229,6 +229,7 @@ export const sendBookingConfirmationEmail = async (to, data = {}) => {
       to,
       subject: `You're booked! ${data.trip_name || "Your experience"}${data.booking_id ? ` · ${data.booking_id}` : ""}`,
       html: buildBookingConfirmationHtml(data),
+      ...(attachments.length ? { attachments } : {}),
     });
     // Resend resolves (does not throw) on API errors — inspect the payload.
     if (error) {
