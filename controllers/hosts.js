@@ -1,6 +1,7 @@
 import { Host } from "../models/hosts.js";
 import { Trips } from "../models/trips.js";
 import { UserReviews } from "../models/UserReviews.js";
+import jwt from "jsonwebtoken";
 
 // Average rating + count per host, from that host's own visible reviews only
 // (entityType "host", not pending/rejected). Never mixes trip or brand reviews.
@@ -433,6 +434,39 @@ export const getHostById = async (req, res) => {
   const data = host.toObject();
   data.rating = r ? r.rating : null;
   data.reviewCount = r ? r.reviewCount : 0;
+
+  // Security check: only return sensitive financial/verification data if request is from an authenticated Admin
+  let isAdmin = false;
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    try {
+      const token = authHeader.split(" ")[1];
+      const decoded = jwt.verify(token, process.env.APP_SECRET);
+      if (decoded && String(decoded.role).toLowerCase() === "admin") {
+        isAdmin = true;
+      }
+    } catch (e) {
+      // Token is invalid/expired — treat as public user
+    }
+  }
+
+  if (!isAdmin) {
+    delete data.bankName;
+    delete data.accountNumber;
+    delete data.ifscCode;
+    delete data.accountHolderName;
+    delete data.panNumber;
+    delete data.gstNumber;
+    delete data.commissionRate;
+    delete data.contact_id;
+    delete data.fund_account_id;
+    if (data.documents) {
+      delete data.documents.panCard;
+      delete data.documents.gstCertificate;
+      delete data.documents.bankPassbook;
+      delete data.documents.businessLicense;
+    }
+  }
 
   res.status(200).json({
     success: true,
@@ -1705,7 +1739,7 @@ export const getTripsByHost = async (req, res) => {
 
     // Find all trips hosted by the specific host
     const trips = await Trips.find({ host: id })
-      .populate('host')
+      .populate('host', '-bankName -accountNumber -ifscCode -accountHolderName -panNumber -gstNumber -documents -contact_id -fund_account_id -commissionRate')
       .limit(limit)
       .skip(skip)
       .sort({ date: -1 });

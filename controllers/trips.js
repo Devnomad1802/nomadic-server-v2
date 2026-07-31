@@ -570,7 +570,7 @@ export const GetAllTrips = async (req, res) => {
   try {
     // Fetch all trips from the database with host details populated
     const trips = await Trips.find()
-      .populate('host')
+      .populate('host', '-bankName -accountNumber -ifscCode -accountHolderName -panNumber -gstNumber -documents -contact_id -fund_account_id -commissionRate')
       .sort({ date: -1 });
     return res
       .status(200)
@@ -586,7 +586,7 @@ export const GetAllTripsForUser = async (req, res) => {
     // Public listing: hide host proposals awaiting/denied admin approval.
     // $nin also matches docs without a Status field, so legacy/admin trips stay visible.
     const trips = await Trips.find({ enableBooking: true, Status: { $nin: ["pending", "rejected"] } })
-      .populate('host')
+      .populate('host', '-bankName -accountNumber -ifscCode -accountHolderName -panNumber -gstNumber -documents -contact_id -fund_account_id -commissionRate')
       .sort({ date: -1 });
     return res
       .status(200)
@@ -600,7 +600,7 @@ export const GetAllTripsForUser = async (req, res) => {
 export const GetTrendingTrips = async (req, res) => {
   try {
     const trips = await Trips.find({ Trending: true, Status: { $nin: ["pending", "rejected"] } })
-      .populate('host')
+      .populate('host', '-bankName -accountNumber -ifscCode -accountHolderName -panNumber -gstNumber -documents -contact_id -fund_account_id -commissionRate')
       .sort({ date: -1 });
     return res
       .status(200)
@@ -613,7 +613,7 @@ export const GetTrendingTrips = async (req, res) => {
 export const GetTripsById = async (req, res) => {
   try {
     const trips = await Trips.find({ _id: req.body._id })
-      .populate('host')
+      .populate('host', '-bankName -accountNumber -ifscCode -accountHolderName -panNumber -gstNumber -documents -contact_id -fund_account_id -commissionRate')
       .sort({ date: -1 });
 
     // Lightweight analytics: count detail views (fire-and-forget, response unchanged)

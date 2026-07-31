@@ -392,7 +392,7 @@ export const login = async (req, res) => {
   if (![email, password].every(Boolean))
     throw new BadRequest("Please fill all inputs!");
 
-  const user = await User.findOneAndUpdate({ email }, { isLoggedIn: false });
+  const user = await User.findOneAndUpdate({ email }, { isLoggedIn: false }).select("+password");
 
   if (!user || !(await user.matchesPassword(password))) {
     throw new BadRequest("Incorrect email or password");
@@ -488,7 +488,7 @@ export const editUser = async (req, res) => {
     try {
       let user = await User.findOne({
         _id: req.body.userId,
-      });
+      }).select("+password");
       if (!user) {
         await cleanupUploadedFiles(req);
         return res
@@ -870,7 +870,7 @@ const getRedirectBodytwo = (message) => `
 export const googleCallback = async (req, res) => {
   try {
     const token = await logIn({ _id: req.user._id });
-    const clientUrl = process.env.CLIENT_URL || 'https://nomadictownies.com';
+    const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
     const userData = encodeURIComponent(JSON.stringify({
       _id: req.user._id,
       name: req.user.name,
@@ -879,7 +879,7 @@ export const googleCallback = async (req, res) => {
     }));
     res.redirect(clientUrl + '/auth/google/success?token=' + token + '&user=' + userData);
   } catch (err) {
-    const clientUrl = process.env.CLIENT_URL || 'https://nomadictownies.com';
+    const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
     res.redirect(clientUrl + '?error=google_failed');
   }
 };
