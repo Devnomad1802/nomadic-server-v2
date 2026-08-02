@@ -24,6 +24,7 @@ import {
   listApplications,
   updateApplication,
 } from "../controllers/hostApplications.js";
+import { getOnboarding, submitOnboarding } from "../controllers/hostOnboarding.js";
 
 /* Host Portal routes — JWT required on every endpoint. Mounted at
  * /api/host-portal (separate mount → zero interference with the existing
@@ -38,6 +39,12 @@ HostPortalRoutes.post("/apply", catchAsync(submitApplication));
 // Admin: review host applications.
 HostPortalRoutes.get("/applications", auth, catchAsync(listApplications));
 HostPortalRoutes.patch("/applications/:id", auth, catchAsync(updateApplication));
+
+// Public host-onboarding (token IS the auth). GET = prefill, POST = draft submit.
+// No JWT: the applicant isn't a logged-in user yet. submitOnboarding runs its own
+// multipart upload middleware internally, so no body parser is applied here.
+HostPortalRoutes.get("/onboarding/:token", catchAsync(getOnboarding));
+HostPortalRoutes.post("/onboarding/:token", submitOnboarding);
 
 HostPortalRoutes.get("/me", auth, catchAsync(getMyHost));
 HostPortalRoutes.get("/me/trips", auth, catchAsync(getMyTrips));

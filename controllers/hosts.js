@@ -57,6 +57,10 @@ export const createHost = async (req, res, next) => {
     { name: "brandingLogo", maxCount: 1 },
     { name: "coverImage", maxCount: 1 },
     { name: "gallery", maxCount: 10 }, // Allow up to 10 gallery images
+    // Onboarding-portal extra documents (additive)
+    { name: "idProof", maxCount: 1 },
+    { name: "certificates", maxCount: 5 },
+    { name: "insurance", maxCount: 2 },
   ];
 
   // Use S3 upload middleware
@@ -134,6 +138,17 @@ export const createHost = async (req, res, next) => {
         seoTitle,
         seoSlug,
         metaDescription,
+
+        // Onboarding-portal additive fields
+        displayName,
+        country,
+        whyHost,
+        uniqueValue,
+        businessType,
+        altPhone,
+        emergencyContact,
+        serviceQuality,
+        bankAccounts,
       } = req.body;
 
       if(!hostName || !emailAddress || !phoneNumber || !bankName || !accountHolderName || !accountNumber || !ifscCode) {
@@ -185,6 +200,16 @@ export const createHost = async (req, res, next) => {
           req.uploadedFiles.businessLicense[0]
         ) {
           documents.businessLicense = req.uploadedFiles.businessLicense[0].url;
+        }
+        // Onboarding-portal extra documents (additive, all optional)
+        if (req.uploadedFiles.idProof && req.uploadedFiles.idProof[0]) {
+          documents.idProof = req.uploadedFiles.idProof[0].url;
+        }
+        if (req.uploadedFiles.certificates && req.uploadedFiles.certificates.length) {
+          documents.certificates = req.uploadedFiles.certificates.map((f) => f.url);
+        }
+        if (req.uploadedFiles.insurance && req.uploadedFiles.insurance.length) {
+          documents.insurance = req.uploadedFiles.insurance.map((f) => f.url);
         }
 
         // Process branding images
@@ -313,6 +338,26 @@ export const createHost = async (req, res, next) => {
         seoTitle,
         seoSlug,
         metaDescription,
+        // Onboarding-portal additive fields (all optional)
+        displayName,
+        country,
+        whyHost,
+        uniqueValue,
+        businessType,
+        altPhone,
+        emergencyContact:
+          emergencyContact && typeof emergencyContact === "string"
+            ? JSON.parse(emergencyContact)
+            : emergencyContact || undefined,
+        serviceQuality:
+          serviceQuality && typeof serviceQuality === "string"
+            ? JSON.parse(serviceQuality)
+            : serviceQuality || undefined,
+        bankAccounts: Array.isArray(bankAccounts)
+          ? bankAccounts
+          : bankAccounts
+          ? JSON.parse(bankAccounts)
+          : [],
         // Specialties
         specialties: Array.isArray(specialties)
           ? specialties
@@ -487,6 +532,10 @@ export const updateHost = async (req, res, next) => {
     { name: "brandingLogo", maxCount: 1 },
     { name: "coverImage", maxCount: 1 },
     { name: "gallery", maxCount: 10 }, // Allow up to 10 gallery images
+    // Onboarding-portal extra documents (additive)
+    { name: "idProof", maxCount: 1 },
+    { name: "certificates", maxCount: 5 },
+    { name: "insurance", maxCount: 2 },
   ];
 
   // Use S3 upload middleware
@@ -655,6 +704,8 @@ export const updateHost = async (req, res, next) => {
           "gstCertificate",
           "bankPassbook",
           "businessLicense",
+          // Onboarding-portal extras (additive, single-file)
+          "idProof",
         ];
 
         documentTypes.forEach((docType) => {
@@ -667,7 +718,18 @@ export const updateHost = async (req, res, next) => {
 
             // Update with new file URL
             newDocuments[docType] = req.uploadedFiles[docType][0].url;
-            } 
+            }
+        });
+
+        // Multi-file onboarding documents (certificates, insurance): new
+        // uploads replace the existing set for that type.
+        ["certificates", "insurance"].forEach((docType) => {
+          if (req.uploadedFiles[docType] && req.uploadedFiles[docType].length > 0) {
+            if (Array.isArray(existingHost.documents?.[docType])) {
+              oldFilesToDelete.push(...existingHost.documents[docType]);
+            }
+            newDocuments[docType] = req.uploadedFiles[docType].map((f) => f.url);
+          }
         });
 
         // Process branding images
@@ -768,6 +830,18 @@ export const updateHost = async (req, res, next) => {
         updateData.socialMedia = JSON.parse(updateData.socialMedia);
       }
 
+      // Onboarding-portal object/array fields — parse when sent as JSON strings
+      // (multipart). Scalars (displayName, country, whyHost, uniqueValue,
+      // businessType, altPhone) pass through req.body untouched.
+      ["emergencyContact", "serviceQuality"].forEach((k) => {
+        if (updateData[k] && typeof updateData[k] === "string") {
+          updateData[k] = JSON.parse(updateData[k]);
+        }
+      });
+      if (updateData.bankAccounts && typeof updateData.bankAccounts === "string") {
+        updateData.bankAccounts = JSON.parse(updateData.bankAccounts);
+      }
+
       // RazorpayX IDs commented out for now
       // Add updated RazorpayX IDs to updateData
       // updateData.contact_id = updatedContactId;
@@ -810,6 +884,10 @@ export const updateHostPartial = async (req, res, next) => {
     { name: "brandingLogo", maxCount: 1 },
     { name: "coverImage", maxCount: 1 },
     { name: "gallery", maxCount: 10 }, // Allow up to 10 gallery images
+    // Onboarding-portal extra documents (additive)
+    { name: "idProof", maxCount: 1 },
+    { name: "certificates", maxCount: 5 },
+    { name: "insurance", maxCount: 2 },
   ];
 
   // Use S3 upload middleware

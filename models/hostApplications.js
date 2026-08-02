@@ -19,6 +19,10 @@ const hostApplicationSchema = mongoose.Schema(
     status: { type: String, default: "new" },
     adminNote: { type: String, default: "" },
     hostId: { type: mongoose.Schema.Types.ObjectId, ref: "Host", required: false },
+    // Post-approval onboarding link (Phase 1). Additive — approval flow unchanged.
+    onboardingToken: { type: String, index: true },
+    onboardingTokenExpiry: { type: Date },
+    onboardingUsed: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
