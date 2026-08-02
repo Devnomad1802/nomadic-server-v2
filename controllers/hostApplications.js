@@ -1,4 +1,5 @@
 import { HostApplication } from "../models/hostApplications.js";
+import { issueOnboardingLink } from "./hostOnboarding.js";
 
 // POST /host-portal/apply — PUBLIC. Stores a "Become a Host" application.
 export const submitApplication = async (req, res) => {
@@ -32,7 +33,18 @@ export const updateApplication = async (req, res) => {
   if (status !== undefined) update.status = status;
   if (adminNote !== undefined) update.adminNote = adminNote;
   if (hostId !== undefined) update.hostId = hostId;
+  const before = await HostApplication.findById(req.params.id);
+  if (!before) return res.status(404).json({ success: false, message: "Application not found." });
+
   const app = await HostApplication.findByIdAndUpdate(req.params.id, update, { new: true });
-  if (!app) return res.status(404).json({ success: false, message: "Application not found." });
+
+  // Phase 1: on transition INTO approved, mint a secure onboarding link + email
+  // it to the applicant. Additive — approval flow itself is unchanged. Skip if a
+  // link was already issued (idempotent re-approve). Best-effort; never blocks.
+  const nowApproved = String(app.status).toLowerCase() === "approved";
+  const wasApproved = String(before.status).toLowerCase() === "approved";
+  if (nowApproved && !wasApproved && !app.onboardingToken) {
+    try { await issueOnboardingLink(app); } catch (e) { console.error("issueOnboardingLink:", e?.message || e); }
+  }
   return res.status(200).json({ success: true, data: app });
 };

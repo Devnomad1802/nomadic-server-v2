@@ -127,6 +127,10 @@ const hostSchema = mongoose.Schema(
       gstCertificate: String,
       bankPassbook: String,
       businessLicense: String,
+      // Onboarding extras (additive)
+      idProof: String,
+      certificates: [String],
+      insurance: [String],
     },
 
     // Finance
@@ -153,12 +157,35 @@ const hostSchema = mongoose.Schema(
     // Regions the host operates in (Host Dashboard onboarding)
     regions: [String],
 
-    // Status and Verification
+    // Status and Verification. "draft" = self-onboarded, awaiting admin review
+    // (not live, no dashboard) — populated by the Host Onboarding portal.
     status: {
       type: String,
-      enum: ["pending", "approved", "rejected"],
+      enum: ["draft", "pending", "approved", "rejected"],
       default: "pending",
     },
+    // Where this record came from: admin-created vs host self-onboarding.
+    source: { type: String, enum: ["admin", "onboarding"], default: "admin" },
+
+    // ── Host Onboarding portal — additive optional fields (map 1:1 with the
+    // onboarding form; all optional so existing hosts/flows are untouched). ──
+    displayName: { type: String },
+    country: { type: String },
+    whyHost: { type: String },
+    uniqueValue: { type: String },
+    businessType: { type: String },
+    altPhone: { type: String },
+    emergencyContact: { name: String, role: String, phone: String },
+    serviceQuality: {
+      groupSize: String,
+      duration: String,
+      difficulty: String,
+      ageGroups: [String],
+      medical: String,
+    },
+    bankAccounts: [
+      { accountHolderName: String, bankName: String, accountNumber: String, ifscCode: String },
+    ],
     // Shown to the host when rejected (KYC/verification review)
     rejectionReason: { type: String, default: "" },
    
