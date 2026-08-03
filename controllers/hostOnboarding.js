@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import "dotenv/config";
+import mongoose from "mongoose";
 import { Resend } from "resend";
 import { Host } from "../models/hosts.js";
 import { HostApplication } from "../models/hostApplications.js";
@@ -112,14 +113,18 @@ export const submitOnboarding = (req, res) => {
         status: "draft",
         isActive: false, showOnWebsite: false, dashboardAccess: false,
         // basic
-        hostName: b.hostName, displayName: b.displayName, emailAddress: b.email,
+        hostName: b.hostName, displayName: b.displayName,
+        // emailAddress + panNumber carry unique indexes — never store "" (an
+        // empty string collides across drafts); use undefined so the index skips.
+        emailAddress: (b.email || "").trim().toLowerCase() || undefined,
         phoneNumber: b.phone, city: b.city, state: b.state, hqLocation: b.location,
         country: b.country, languages: parseJSON(b.languages, []),
         // about
         hostOverview: b.overview, shortBio: b.shortBio, whyHost: b.whyHost, uniqueValue: b.unique,
         // business
         hostTitle: b.brandName, foundedYear: b.foundedYear, businessType: b.bizType,
-        gstNumber: b.gstNumber, panNumber: b.panNumber, completeAddress: b.bizAddress || b.completeAddress,
+        gstNumber: b.gstNumber, panNumber: (b.panNumber || "").trim() || undefined,
+        completeAddress: b.bizAddress || b.completeAddress,
         // branding + images
         tagline: b.tagline, brandingLogo: url1("logo"), coverImage: url1("cover"), gallery: urls("gallery"),
         // expertise
@@ -148,24 +153,48 @@ export const submitOnboarding = (req, res) => {
           gstCertificate: url1("docGst"), businessLicense: url1("docBiz"),
           certificates: urls("docCert"), insurance: urls("docIns"),
         },
-        user: app.userId || undefined,
+        // Only link a real User ref; a stray/invalid id would CastError the write.
+        user: mongoose.isValidObjectId(app.userId) ? app.userId : undefined,
       };
 
-      // One draft per application: reuse if the app already spawned one.
+      // Resolve the target draft idempotently so retries never duplicate or
+      // collide on the unique email/PAN indexes:
+      //  1) the app already spawned a draft  → update it
+      //  2) a host with this email exists     → reuse if it's an onboarding
+      //     draft, else it's a live host → tell the user the email is in use
+      //  3) otherwise create fresh
       let host;
       if (app.hostId) {
         host = await Host.findByIdAndUpdate(app.hostId, doc, { new: true });
       }
-      if (!host) {
-        host = await Host.create(doc);
-        app.hostId = host._id;
+      if (!host && doc.emailAddress) {
+        const existing = await Host.findOne({ emailAddress: doc.emailAddress });
+        if (existing) {
+          if (existing.source === "onboarding" || existing.status === "draft") {
+            host = await Host.findByIdAndUpdate(existing._id, doc, { new: true });
+          } else {
+            return res.status(409).json({ ok: false, error: "email_in_use" });
+          }
+        }
       }
+      if (!host) host = await Host.create(doc);
+
+      app.hostId = host._id;
       app.onboardingUsed = true; // single-use link
       await app.save();
 
       return res.json({ ok: true, message: "Profile submitted for review", hostId: host._id });
     } catch (e) {
       console.error("submitOnboarding error:", e?.message || e);
+      // Surface the actual cause so the applicant gets an actionable message.
+      if (e?.code === 11000) {
+        const dupField = Object.keys(e?.keyPattern || {})[0] || "detail";
+        const map = { emailAddress: "email_in_use", panNumber: "pan_in_use" };
+        return res.status(409).json({ ok: false, error: map[dupField] || "duplicate" });
+      }
+      if (e?.name === "ValidationError") {
+        return res.status(400).json({ ok: false, error: "validation", detail: e.message });
+      }
       return res.status(500).json({ ok: false, error: "server_error" });
     }
   });
