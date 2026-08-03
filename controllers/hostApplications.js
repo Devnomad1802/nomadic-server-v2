@@ -38,12 +38,12 @@ export const updateApplication = async (req, res) => {
 
   const app = await HostApplication.findByIdAndUpdate(req.params.id, update, { new: true });
 
-  // Phase 1: on transition INTO approved, mint a secure onboarding link + email
-  // it to the applicant. Additive — approval flow itself is unchanged. Skip if a
-  // link was already issued (idempotent re-approve). Best-effort; never blocks.
-  const nowApproved = String(app.status).toLowerCase() === "approved";
-  const wasApproved = String(before.status).toLowerCase() === "approved";
-  if (nowApproved && !wasApproved && !app.onboardingToken) {
+  // On transition INTO "reviewing", mint a secure onboarding link + email it to
+  // the applicant (this is the gate that starts self-onboarding). Idempotent —
+  // skip if a link was already issued. Best-effort; never blocks the update.
+  const nowReviewing = String(app.status).toLowerCase() === "reviewing";
+  const wasReviewing = String(before.status).toLowerCase() === "reviewing";
+  if (nowReviewing && !wasReviewing && !app.onboardingToken) {
     try { await issueOnboardingLink(app); } catch (e) { console.error("issueOnboardingLink:", e?.message || e); }
   }
   return res.status(200).json({ success: true, data: app });
