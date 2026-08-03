@@ -85,13 +85,14 @@ export const getOnboarding = async (req, res) => {
 
 // POST /host-onboarding/:token — public (token auth). Multipart. Creates a
 // DRAFT Host (status:"draft", not live, no dashboard) and marks the token used.
+// Field names mirror the new onboarding design (which mirrors Add New Host).
 const UPLOAD_FIELDS = [
-  { name: "logo", maxCount: 1 }, { name: "cover", maxCount: 1 },
+  { name: "logo", maxCount: 1 }, { name: "coverImage", maxCount: 1 },
   { name: "gallery", maxCount: 10 },
-  { name: "docPan", maxCount: 1 }, { name: "docId", maxCount: 2 },
-  { name: "docBank", maxCount: 1 }, { name: "docGst", maxCount: 1 },
-  { name: "docBiz", maxCount: 1 }, { name: "docCert", maxCount: 5 },
-  { name: "docIns", maxCount: 2 },
+  { name: "panCard", maxCount: 1 }, { name: "gstCertificate", maxCount: 1 },
+  { name: "bankPassbook", maxCount: 1 }, { name: "businessLicense", maxCount: 1 },
+  { name: "idProof", maxCount: 1 }, { name: "certificationsLicenses", maxCount: 5 },
+  { name: "insuranceDocuments", maxCount: 2 },
 ];
 
 export const submitOnboarding = (req, res) => {
@@ -107,53 +108,57 @@ export const submitOnboarding = (req, res) => {
       const url1 = (k) => f[k]?.[0]?.url || undefined;
       const urls = (k) => (f[k] || []).map((x) => x.url);
 
-      // Draft host — every onboarding field mapped 1:1 to the Host schema.
+      // Draft host — field ids from the onboarding form ARE the Host keys, so
+      // this is a near-identity mapping (a few nested groups aside).
       const doc = {
         source: "onboarding",
         status: "draft",
         isActive: false, showOnWebsite: false, dashboardAccess: false,
         // basic
-        hostName: b.hostName, displayName: b.displayName,
-        // emailAddress + panNumber carry unique indexes — never store "" (an
-        // empty string collides across drafts); use undefined so the index skips.
-        emailAddress: (b.email || "").trim().toLowerCase() || undefined,
-        phoneNumber: b.phone, city: b.city, state: b.state, pincode: b.pincode,
-        hqLocation: b.location, country: b.country, languages: parseJSON(b.languages, []),
-        // about
-        hostOverview: b.overview, shortBio: b.shortBio, whyHost: b.whyHost, uniqueValue: b.unique,
-        // business
-        hostTitle: b.brandName, foundedYear: b.foundedYear, businessType: b.bizType,
-        gstNumber: b.gstNumber, panNumber: (b.panNumber || "").trim() || undefined,
-        completeAddress: b.bizAddress || b.completeAddress,
+        hostName: b.hostName, location: b.location, city: b.city, state: b.state,
+        pincode: b.pincode, completeAddress: b.completeAddress,
+        // business — emailAddress + panNumber carry unique indexes; never store
+        // "" (collides across drafts) → undefined so the index skips.
+        panNumber: (b.panNumber || "").trim() || undefined, gstNumber: b.gstNumber,
+        // bank
+        bankName: b.bankName, accountHolderName: b.accountHolderName,
+        accountNumber: b.accountNumber, ifscCode: b.ifscCode,
         // branding + images
-        tagline: b.tagline, brandingLogo: url1("logo"), coverImage: url1("cover"), gallery: urls("gallery"),
-        // expertise
-        specialties: [...parseJSON(b.categories, []), ...parseJSON(b.expertise, [])].filter(Boolean),
-        regionsHosted: parseJSON(b.regions, []),
-        experience: b.experience,
-        achievements: [...parseJSON(b.certifications, []), ...parseJSON(b.achievements, [])].filter(Boolean),
-        // badges
+        hostTitle: b.hostTitle, tagline: b.tagline,
+        brandingLogo: url1("logo"), coverImage: url1("coverImage"), gallery: urls("gallery"),
+        // about
+        shortBio: b.shortBio, hostOverview: b.hostOverview, foundedYear: b.foundedYear,
+        experience: b.experience, hqLocation: b.hqLocation,
+        achievements: parseJSON(b.achievements, []),
+        // specialties & expertise (chips → arrays)
+        specialties: parseJSON(b.specialties, []),
+        languages: parseJSON(b.languages, []),
+        // faq + badges
+        faqs: parseJSON(b.faqs, []),
         verificationBadges: parseJSON(b.badges, []),
-        // trust & service quality
+        // trust & service quality (host-editable subset; stats set by admin)
+        responseTimeLabel: b.responseTimeLabel,
+        regionsHosted: parseJSON(b.regionsHosted, []),
         serviceQuality: {
-          groupSize: b.groupSize, duration: b.duration, difficulty: b.difficulty,
-          ageGroups: parseJSON(b.ageGroups, []), medical: b.medical,
+          groupSize: b.maxGroupSize, duration: b.typicalDuration,
+          difficulty: b.difficultyLevels, ageGroups: parseJSON(b.ageGroups, []),
+          medical: b.firstAidOnTrips,
         },
         // contact
-        whatsapp: b.whatsapp, altPhone: b.altPhone, supportHours: b.supportHours,
-        emergencyContact: { name: b.contactName, role: b.contactRole, phone: b.emergency },
-        socialMedia: parseJSON(b.socialMedia, undefined),
-        // "Ask the host" FAQ pairs
-        faqs: parseJSON(b.faqs, []),
-        // bank (primary + extras)
-        accountHolderName: b.accountHolderName, bankName: b.bankName,
-        accountNumber: b.accountNumber, ifscCode: b.ifscCode,
-        bankAccounts: parseJSON(b.bankAccounts, []),
+        emailAddress: (b.email || "").trim().toLowerCase() || undefined,
+        phoneNumber: b.phone, whatsapp: b.whatsapp, supportHours: b.supportHours,
+        // host onboarding details
+        displayName: b.displayName, country: b.country, businessType: b.businessType,
+        whyHost: b.whyHost, uniqueValue: b.uniqueValue, altPhone: b.alternatePhone,
+        emergencyContact: {
+          name: b.emergencyContactName, role: b.emergencyContactRole, phone: b.emergencyPreparedness,
+        },
         // documents
         documents: {
-          panCard: url1("docPan"), idProof: url1("docId"), bankPassbook: url1("docBank"),
-          gstCertificate: url1("docGst"), businessLicense: url1("docBiz"),
-          certificates: urls("docCert"), insurance: urls("docIns"),
+          panCard: url1("panCard"), gstCertificate: url1("gstCertificate"),
+          bankPassbook: url1("bankPassbook"), businessLicense: url1("businessLicense"),
+          idProof: url1("idProof"), certificates: urls("certificationsLicenses"),
+          insurance: urls("insuranceDocuments"),
         },
         // Only link a real User ref; a stray/invalid id would CastError the write.
         user: mongoose.isValidObjectId(app.userId) ? app.userId : undefined,
