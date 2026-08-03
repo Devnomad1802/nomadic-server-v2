@@ -117,8 +117,8 @@ export const submitOnboarding = (req, res) => {
         // emailAddress + panNumber carry unique indexes — never store "" (an
         // empty string collides across drafts); use undefined so the index skips.
         emailAddress: (b.email || "").trim().toLowerCase() || undefined,
-        phoneNumber: b.phone, city: b.city, state: b.state, hqLocation: b.location,
-        country: b.country, languages: parseJSON(b.languages, []),
+        phoneNumber: b.phone, city: b.city, state: b.state, pincode: b.pincode,
+        hqLocation: b.location, country: b.country, languages: parseJSON(b.languages, []),
         // about
         hostOverview: b.overview, shortBio: b.shortBio, whyHost: b.whyHost, uniqueValue: b.unique,
         // business
@@ -140,9 +140,11 @@ export const submitOnboarding = (req, res) => {
           ageGroups: parseJSON(b.ageGroups, []), medical: b.medical,
         },
         // contact
-        whatsapp: b.whatsapp, altPhone: b.altPhone,
+        whatsapp: b.whatsapp, altPhone: b.altPhone, supportHours: b.supportHours,
         emergencyContact: { name: b.contactName, role: b.contactRole, phone: b.emergency },
         socialMedia: parseJSON(b.socialMedia, undefined),
+        // "Ask the host" FAQ pairs
+        faqs: parseJSON(b.faqs, []),
         // bank (primary + extras)
         accountHolderName: b.accountHolderName, bankName: b.bankName,
         accountNumber: b.accountNumber, ifscCode: b.ifscCode,
