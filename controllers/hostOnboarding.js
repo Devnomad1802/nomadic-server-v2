@@ -52,7 +52,10 @@ const resolveToken = async (token) => {
   if (!app) return null;
   if (app.onboardingUsed) return { app, error: "used" };
   if (app.onboardingTokenExpiry && app.onboardingTokenExpiry < new Date()) return { app, error: "expired" };
-  if (String(app.status).toLowerCase() !== "approved") return { app, error: "not_approved" };
+  // Onboarding is unlocked once an admin moves the application to "reviewing"
+  // (or later approved). Before that the link isn't active.
+  const st = String(app.status).toLowerCase();
+  if (st !== "reviewing" && st !== "approved") return { app, error: "not_approved" };
   return { app, error: null };
 };
 

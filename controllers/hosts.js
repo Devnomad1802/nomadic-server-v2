@@ -1313,11 +1313,24 @@ export const updateHostStatus = async (req, res) => {
   if (status === "approved") {
     updateData.isVerified = isVerified !== undefined ? isVerified : true;
     updateData.rejectionReason = "";
+    // Approving a self-onboarded draft makes it live + publicly visible.
+    // Dashboard access stays OFF — that's a separate manual activation (Step 8).
+    updateData.isActive = true;
+    updateData.showOnWebsite = true;
   }
 
   const updatedHost = await Host.findByIdAndUpdate(id, updateData, {
     new: true,
   });
+
+  // Keep the source Host Application status in lockstep: approving/rejecting the
+  // draft host resolves its linked application too. Best-effort.
+  try {
+    const { HostApplication } = await import("../models/hostApplications.js");
+    if (status === "approved" || status === "rejected") {
+      await HostApplication.updateOne({ hostId: id }, { status });
+    }
+  } catch (e) { console.error("app status sync:", e?.message || e); }
 
   // Notify the host about the verification outcome (fire-and-forget).
   try {
