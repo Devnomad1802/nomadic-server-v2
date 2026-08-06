@@ -29,6 +29,7 @@ import PayoutRoutes from "./routes/payouts.js";
 import UserReviewsRoutes from "./routes/UserReviews.js";
 import SeoRoutes from "./routes/Seo.js";
 import analyticsRoutes from "./routes/analytics.js";
+import AddonRoutes from "./routes/addons.js";
 
 const app = express();
 // Behind nginx (single proxy hop): trust the first X-Forwarded-For entry so
@@ -96,6 +97,7 @@ app.use("/api/razorpay", PayoutRoutes);
 app.use("/api", UserReviewsRoutes);
 app.use("/api", SeoRoutes);
 app.use("/api/analytics", analyticsRoutes);
+app.use("/api/addons", AddonRoutes);
 
 
 app.get("/", (req, res) => {

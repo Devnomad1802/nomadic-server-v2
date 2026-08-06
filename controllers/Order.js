@@ -4,6 +4,7 @@ import crypto from "crypto";
 import { BadRequest, CustomError } from "../middlewares/index.js";
 import { Bookings, Trips, User } from "../models/index.js";
 import { isPartialAllowed, fmtBalanceDueDate } from "../utils/partialPayment.js";
+import { priceSelectedAddons } from "./addons.js";
 
 const { RAZORPAY_KEY_SECRET, RAZORPAY_KEY_ID } = process.env;
 
@@ -82,7 +83,7 @@ export const createSecureOrder = async (req, res) => {
     const userId = req.user?._id;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
-    const { tripId, quantities, couponCode, batchIndex, paymentType } = req.body || {};
+    const { tripId, quantities, couponCode, batchIndex, paymentType, addons } = req.body || {};
     if (!tripId) return res.status(400).json({ error: "tripId is required" });
 
     const trip = await Trips.findById(tripId).populate("host");
@@ -93,6 +94,11 @@ export const createSecureOrder = async (req, res) => {
     if (calc.total <= 0 || calc.travellers <= 0) {
       return res.status(400).json({ error: "Invalid selection — choose at least one traveller." });
     }
+
+    // Booking Add-ons — server re-prices the chosen add-ons from the DB catalogue
+    // (browser only sends which addon/plan). Premium is a flat charge on top of
+    // the trip total, always paid now (even on partial/book-now-pay-later).
+    const addonPricing = await priceSelectedAddons(addons, { tripId: `${tripId}`, categories: [], regions: [], countries: [] });
 
     // Date snapshot for the success page (mirrors old cardData shape).
     // Parsed BEFORE the partial decision — the batch departure gates the
@@ -120,8 +126,12 @@ export const createSecureOrder = async (req, res) => {
       firstBookingPrice: trip.firstBookingPrice,
       departure: batchDate,
     });
-    const chargeNow = wantPartial && partialAllowed && firstPrice > 0 && firstPrice < calc.total ? firstPrice : calc.total;
-    const finalType = chargeNow === calc.total ? "full" : "firstPayment";
+    const tripChargeNow = wantPartial && partialAllowed && firstPrice > 0 && firstPrice < calc.total ? firstPrice : calc.total;
+    const finalType = tripChargeNow === calc.total ? "full" : "firstPayment";
+    // Add-on premium is always charged in this transaction, on top of the trip
+    // amount (whether full or first-payment).
+    const chargeNow = tripChargeNow + addonPricing.total;
+    const fullAmountWithAddons = calc.total + addonPricing.total;
 
     const razorpay = new Razorpay({ key_id: RAZORPAY_KEY_ID, key_secret: RAZORPAY_KEY_SECRET });
     const order = await razorpay.orders.create({
@@ -137,6 +147,8 @@ export const createSecureOrder = async (req, res) => {
       cardDate: { batchDate, endSelectDate, numberOfDays },
       gstTax: calc.gst,
       cardSectionData: calc.lineItems,
+      addons: addonPricing.items,
+      addonsTotal: addonPricing.total,
     };
     const h = trip.host && typeof trip.host === "object" ? trip.host : null;
     const paymentDetail = {
@@ -171,8 +183,10 @@ export const createSecureOrder = async (req, res) => {
       tripId: `${tripId}`,
       paymentStatus: "created", // pending until confirmed
       orderAmount: chargeNow,
-      fullTripAmount: calc.total,
+      fullTripAmount: fullAmountWithAddons,
       total: chargeNow,
+      addons: addonPricing.items,
+      addonsTotal: addonPricing.total,
       coupenDiscount: `${calc.discount}`,
       couponCode: calc.validCoupon ? couponCode : "",
       batchIndex: Number(batchIndex) || 0,

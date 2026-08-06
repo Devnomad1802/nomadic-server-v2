@@ -59,6 +59,20 @@ const userSchema = mongoose.Schema({
   travellersCount: { type: Number, required: false },
   paymentType: { type: String, required: false },    // "full" | "firstPayment"
 
+  // ── Booking Add-ons (engine) — server-priced snapshot of chosen add-ons ──
+  addons: {
+    type: [
+      {
+        addonId: String, type: String, title: String, provider: String,
+        planId: String, planLabel: String, price: Number,
+        status: { type: String, default: "pending" }, // pending|issued|failed
+        reference: String, // policy number / external ref, filled post-issue
+      },
+    ],
+    default: [],
+  },
+  addonsTotal: { type: Number, default: 0 },
+
   // ── Invoice (assigned once, after the first verified payment) ──
   invoiceNumber: { type: String, required: false },
   invoiceDate: { type: Date, required: false },
