@@ -26,6 +26,7 @@ import {
   deleteFromS3,
   deleteMultipleFromS3,
 } from "../middlewares/index.js";
+import { sanitizeReels } from "../utils/instagramReels.js";
 // RazorpayX imports commented out for now
 // import { createContactService, createFundAccountService, updateContactService } from "../services/razorpayxService.js";
 
@@ -104,6 +105,7 @@ export const createHost = async (req, res, next) => {
         experience,
         hqLocation,
         achievements,
+        reels,
 
         // Specialties & Expertise
         specialties,
@@ -373,6 +375,8 @@ export const createHost = async (req, res, next) => {
         // Files
         documents,
         gallery,
+        // Instagram Reels — validated, normalized, de-duplicated public URLs.
+        reels: sanitizeReels(reels),
         // RazorpayX IDs commented out for now
         // contact_id: contact?.id,
         // fund_account_id: fundAccount?.id,
@@ -817,6 +821,12 @@ export const updateHost = async (req, res, next) => {
 
       if (updateData.faqs && typeof updateData.faqs === "string") {
         updateData.faqs = JSON.parse(updateData.faqs);
+      }
+
+      // Instagram Reels — validate/normalize/dedupe only when the field is sent,
+      // so partial updates never wipe an existing reel collection.
+      if (updateData.reels !== undefined) {
+        updateData.reels = sanitizeReels(updateData.reels);
       }
 
       if (updateData.verificationBadges && typeof updateData.verificationBadges === "string") {

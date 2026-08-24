@@ -41,6 +41,11 @@ const hostSchema = mongoose.Schema(
     achievements: [String],
     gallery: [String],
 
+    // Instagram Reels — public reel URLs only (source of truth). We never store
+    // the video; the frontend embeds via Instagram's official embed.js. Ordered
+    // (admin reorders), validated + de-duplicated in the controller.
+    reels: [String],
+
     // Specialties & Expertise - Array of strings
     specialties: [String],
 
