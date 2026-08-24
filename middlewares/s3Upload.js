@@ -10,6 +10,7 @@ import multer from "multer";
 import crypto from "crypto";
 import path from "path";
 import { s3Client, aws_config, S3_CONFIG, generateS3Url, extractS3Key } from "../config/aws.config.js";
+import { compressReelVideo } from "../utils/compressVideo.js";
 
 // Configure multer for memory storage (we'll upload directly to S3)
 const storage = multer.memoryStorage();
@@ -539,10 +540,18 @@ export const uploadHostFilesToS3 = (fields) => {
           for (const fieldName in req.files) {
             uploadedFiles[fieldName] = [];
             for (const file of req.files[fieldName]) {
-              const folder = isVideoFile(file) ? "host-reels" : "hosts";
-              uploadPromises.push(
-                smartUploadToS3(file, folder).then((result) => ({ fieldName, result }))
-              );
+              if (isVideoFile(file)) {
+                // Compress reel videos before storing (transcode → smaller mp4).
+                uploadPromises.push(
+                  compressReelVideo(file)
+                    .then((out) => smartUploadToS3(out, "host-reels"))
+                    .then((result) => ({ fieldName, result }))
+                );
+              } else {
+                uploadPromises.push(
+                  smartUploadToS3(file, "hosts").then((result) => ({ fieldName, result }))
+                );
+              }
             }
           }
 
