@@ -10,6 +10,7 @@ import multer from "multer";
 import crypto from "crypto";
 import path from "path";
 import { s3Client, aws_config, S3_CONFIG, generateS3Url, extractS3Key } from "../config/aws.config.js";
+import { compressReelVideo } from "../utils/compressVideo.js";
 
 // Configure multer for memory storage (we'll upload directly to S3)
 const storage = multer.memoryStorage();
@@ -510,6 +511,62 @@ export const uploadBlogFilesToS3 = () => {
         return res.status(500).json({
           error: "Failed to upload files to S3",
           details: uploadError.message
+        });
+      }
+    });
+  };
+};
+
+// Host media uploads — same fixed-field shape as uploadFilesToS3, but backed by
+// the advanced (video-capable) multer so reel videos (mp4/mov/webm…) are
+// accepted. Videos land in "host-reels", everything else in "hosts". Large
+// videos go through multipart automatically (smartUploadToS3).
+export const uploadHostFilesToS3 = (fields) => {
+  return async (req, res, next) => {
+    const uploadMiddleware = uploadAdvanced.fields(fields);
+
+    uploadMiddleware(req, res, async (error) => {
+      if (error instanceof multer.MulterError) {
+        return res.status(400).json({ error: "Multer error: " + error.message });
+      } else if (error) {
+        return res.status(500).json({ error: "File upload error: " + error.message });
+      }
+
+      try {
+        if (req.files) {
+          const uploadPromises = [];
+          const uploadedFiles = {};
+
+          for (const fieldName in req.files) {
+            uploadedFiles[fieldName] = [];
+            for (const file of req.files[fieldName]) {
+              if (isVideoFile(file)) {
+                // Compress reel videos before storing (transcode → smaller mp4).
+                uploadPromises.push(
+                  compressReelVideo(file)
+                    .then((out) => smartUploadToS3(out, "host-reels"))
+                    .then((result) => ({ fieldName, result }))
+                );
+              } else {
+                uploadPromises.push(
+                  smartUploadToS3(file, "hosts").then((result) => ({ fieldName, result }))
+                );
+              }
+            }
+          }
+
+          const results = await Promise.all(uploadPromises);
+          results.forEach(({ fieldName, result }) => {
+            uploadedFiles[fieldName].push(result);
+          });
+          req.uploadedFiles = uploadedFiles;
+        }
+        next();
+      } catch (uploadError) {
+        console.error("S3 host upload error:", uploadError);
+        return res.status(500).json({
+          error: "Failed to upload files to S3",
+          detail: uploadError?.message || String(uploadError),
         });
       }
     });
