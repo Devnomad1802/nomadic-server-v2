@@ -23,10 +23,11 @@ import {
   BadRequest,
   CustomError,
   uploadFilesToS3,
+  uploadHostFilesToS3,
   deleteFromS3,
   deleteMultipleFromS3,
 } from "../middlewares/index.js";
-import { sanitizeReels } from "../utils/instagramReels.js";
+import { sanitizeReels, reelAssetUrls } from "../utils/instagramReels.js";
 // RazorpayX imports commented out for now
 // import { createContactService, createFundAccountService, updateContactService } from "../services/razorpayxService.js";
 
@@ -58,14 +59,17 @@ export const createHost = async (req, res, next) => {
     { name: "brandingLogo", maxCount: 1 },
     { name: "coverImage", maxCount: 1 },
     { name: "gallery", maxCount: 10 }, // Allow up to 10 gallery images
+    // Host reels — uploaded 9:16 videos + optional posters (served from our CDN)
+    { name: "reelVideos", maxCount: 20 },
+    { name: "reelPosters", maxCount: 20 },
     // Onboarding-portal extra documents (additive)
     { name: "idProof", maxCount: 1 },
     { name: "certificates", maxCount: 5 },
     { name: "insurance", maxCount: 2 },
   ];
 
-  // Use S3 upload middleware
-  uploadFilesToS3(fields)(req, res, async (err) => {
+  // Use S3 upload middleware (video-capable — reels are mp4)
+  uploadHostFilesToS3(fields)(req, res, async (err) => {
     if (err) {
       // Clean up any partially uploaded files
       await cleanupUploadedFiles(req);
@@ -375,8 +379,12 @@ export const createHost = async (req, res, next) => {
         // Files
         documents,
         gallery,
-        // Instagram Reels — validated, normalized, de-duplicated public URLs.
-        reels: sanitizeReels(reels),
+        // Host reels — resolve uploaded video/poster files by index.
+        reels: sanitizeReels(
+          reels,
+          (req.uploadedFiles?.reelVideos || []).map((f) => f.url),
+          (req.uploadedFiles?.reelPosters || []).map((f) => f.url)
+        ),
         // RazorpayX IDs commented out for now
         // contact_id: contact?.id,
         // fund_account_id: fundAccount?.id,
@@ -515,6 +523,11 @@ export const getHostById = async (req, res) => {
       delete data.documents.bankPassbook;
       delete data.documents.businessLicense;
     }
+    // Reels: expose only playable media, never the admin-only Instagram source
+    // reference or internal ids.
+    if (Array.isArray(data.reels)) {
+      data.reels = data.reels.map((r) => ({ videoUrl: r.videoUrl, poster: r.poster }));
+    }
   }
 
   res.status(200).json({
@@ -536,14 +549,17 @@ export const updateHost = async (req, res, next) => {
     { name: "brandingLogo", maxCount: 1 },
     { name: "coverImage", maxCount: 1 },
     { name: "gallery", maxCount: 10 }, // Allow up to 10 gallery images
+    // Host reels — uploaded 9:16 videos + optional posters (served from our CDN)
+    { name: "reelVideos", maxCount: 20 },
+    { name: "reelPosters", maxCount: 20 },
     // Onboarding-portal extra documents (additive)
     { name: "idProof", maxCount: 1 },
     { name: "certificates", maxCount: 5 },
     { name: "insurance", maxCount: 2 },
   ];
 
-  // Use S3 upload middleware
-  uploadFilesToS3(fields)(req, res, async (err) => {
+  // Use S3 upload middleware (video-capable — reels are mp4)
+  uploadHostFilesToS3(fields)(req, res, async (err) => {
     if (err) {
       // Clean up any partially uploaded files
       await cleanupUploadedFiles(req);
@@ -823,10 +839,20 @@ export const updateHost = async (req, res, next) => {
         updateData.faqs = JSON.parse(updateData.faqs);
       }
 
-      // Instagram Reels — validate/normalize/dedupe only when the field is sent,
-      // so partial updates never wipe an existing reel collection.
+      // Host reels — rebuild only when the field is sent (partial updates never
+      // wipe an existing reel collection). Resolve any newly-uploaded video/
+      // poster files by index, then mark removed S3 assets for deletion.
       if (updateData.reels !== undefined) {
-        updateData.reels = sanitizeReels(updateData.reels);
+        updateData.reels = sanitizeReels(
+          updateData.reels,
+          (req.uploadedFiles?.reelVideos || []).map((f) => f.url),
+          (req.uploadedFiles?.reelPosters || []).map((f) => f.url)
+        );
+        const keep = new Set(reelAssetUrls(updateData.reels));
+        const removedReelAssets = reelAssetUrls(existingHost.reels || []).filter(
+          (url) => !keep.has(url)
+        );
+        if (removedReelAssets.length > 0) oldFilesToDelete.push(...removedReelAssets);
       }
 
       if (updateData.verificationBadges && typeof updateData.verificationBadges === "string") {
@@ -894,14 +920,17 @@ export const updateHostPartial = async (req, res, next) => {
     { name: "brandingLogo", maxCount: 1 },
     { name: "coverImage", maxCount: 1 },
     { name: "gallery", maxCount: 10 }, // Allow up to 10 gallery images
+    // Host reels — uploaded 9:16 videos + optional posters (served from our CDN)
+    { name: "reelVideos", maxCount: 20 },
+    { name: "reelPosters", maxCount: 20 },
     // Onboarding-portal extra documents (additive)
     { name: "idProof", maxCount: 1 },
     { name: "certificates", maxCount: 5 },
     { name: "insurance", maxCount: 2 },
   ];
 
-  // Use S3 upload middleware
-  uploadFilesToS3(fields)(req, res, async (err) => {
+  // Use S3 upload middleware (video-capable — reels are mp4)
+  uploadHostFilesToS3(fields)(req, res, async (err) => {
     if (err) {
       // Clean up any partially uploaded files
       await cleanupUploadedFiles(req);

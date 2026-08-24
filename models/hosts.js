@@ -41,10 +41,21 @@ const hostSchema = mongoose.Schema(
     achievements: [String],
     gallery: [String],
 
-    // Instagram Reels — public reel URLs only (source of truth). We never store
-    // the video; the frontend embeds via Instagram's official embed.js. Ordered
-    // (admin reorders), validated + de-duplicated in the controller.
-    reels: [String],
+    // Host reels — short vertical (9:16) videos the host owns, uploaded by the
+    // admin and served from our own S3/CDN so the gallery can autoplay them
+    // natively (muted, looped, playsinline) with no third-party player.
+    //   videoUrl : S3 URL of the mp4 (required)
+    //   poster   : S3 URL of a still frame (optional; avoids first-frame flash)
+    //   sourceUrl: optional reference to the original Instagram reel (NOT shown
+    //              to users — kept only for the admin's own bookkeeping)
+    // Ordered (admin reorders).
+    reels: [
+      {
+        videoUrl: String,
+        poster: String,
+        sourceUrl: String,
+      },
+    ],
 
     // Specialties & Expertise - Array of strings
     specialties: [String],
