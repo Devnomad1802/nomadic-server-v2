@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import { Host } from "../models/hosts.js";
 import { Trips } from "../models/trips.js";
 import { UserReviews } from "../models/UserReviews.js";
@@ -481,7 +482,13 @@ export const getAllHosts = async (req, res) => {
 export const getHostById = async (req, res) => {
   const { id } = req.params;
 
-  const host = await Host.findById(id);
+  // Accept either a Mongo _id or an seoSlug. The frontend resolves a card's
+  // slug→id from the (ISR-cached, possibly stale/filtered) hosts list; when
+  // that misses, it falls back to the raw slug — so the detail endpoint must
+  // understand slugs too, otherwise a valid host 404s and the page is blank.
+  const host = mongoose.isValidObjectId(id)
+    ? await Host.findById(id)
+    : await Host.findOne({ seoSlug: id });
   if (!host) {
     throw new CustomError("Host not found", 404);
   }
