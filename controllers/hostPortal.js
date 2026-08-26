@@ -166,7 +166,7 @@ export const activateHost = async (req, res) => {
   host.dashboardAccess = true; // activation enables dashboard login
   await host.save();
 
-  const dashboardUrl = `${process.env.HOST_DASHBOARD_URL || "https://host.nomadictownies.com"}/login`;
+  const dashboardUrl = `${process.env.HOST_DASHBOARD_URL || "https://nomadic-host-v2-en3hbpf55-devnomad1802s-projects.vercel.app"}/login`;
 
   await notifyHost(
     host._id,
