@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import { Host } from "../models/hosts.js";
 import { Trips } from "../models/trips.js";
 import { UserReviews } from "../models/UserReviews.js";
+import { User } from "../models/user.js";
 import jwt from "jsonwebtoken";
 
 // Average rating + count per host, from that host's own visible reviews only
@@ -506,8 +507,16 @@ export const getHostById = async (req, res) => {
     try {
       const token = authHeader.split(" ")[1];
       const decoded = jwt.verify(token, process.env.APP_SECRET);
-      if (decoded && String(decoded.role).toLowerCase() === "admin") {
+      // Admin login tokens are signed with only { _id } (no role claim), so we
+      // can't trust decoded.role alone — that made the admin edit form load with
+      // all sensitive fields stripped. Resolve the role from the DB user by id
+      // (same source of truth passport uses for the admin-only write routes),
+      // and still honour a role claim when present.
+      if (decoded && String(decoded.role || "").toLowerCase() === "admin") {
         isAdmin = true;
+      } else if (decoded?._id) {
+        const u = await User.findById(decoded._id).select("role");
+        if (u && String(u.role || "").toLowerCase() === "admin") isAdmin = true;
       }
     } catch (e) {
       // Token is invalid/expired — treat as public user
