@@ -210,15 +210,20 @@ const hostSchema = mongoose.Schema(
       default: true,
     },
 
-    // Admin controls (additive): hide from public website / block dashboard login.
-    // Both default true so existing hosts are unaffected.
+    // Admin control (additive): hide from public website. Defaults true so
+    // existing hosts are unaffected.
     showOnWebsite: {
       type: Boolean,
       default: true,
     },
+    // Dashboard login gate. Defaults FALSE: a newly created host starts with
+    // dashboard login INACTIVE and gains access only when an admin explicitly
+    // activates it (activateHost links a login User + emails credentials and
+    // flips this true). Existing hosts already have `true` stored, so they are
+    // unaffected by the default change.
     dashboardAccess: {
       type: Boolean,
-      default: true,
+      default: false,
     },
   },
   {
