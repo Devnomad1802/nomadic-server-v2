@@ -141,9 +141,13 @@ export const activateHost = async (req, res) => {
   // create one. Always set a new password so the email always carries a working
   // one.
   const tempPassword = crypto.randomBytes(9).toString("base64url"); // ~12 chars
+  // Resolve the account the way login does — by email (case-insensitive) — so
+  // the password we reset is the one the host's login will actually check.
+  // Fall back to the linked host.user only if no email match exists.
+  const emailRe = `^${String(host.emailAddress).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`;
   let user =
-    (host.user && (await User.findById(host.user))) ||
-    (await User.findOne({ email: { $regex: `^${host.emailAddress}$`, $options: "i" } }));
+    (await User.findOne({ email: { $regex: emailRe, $options: "i" } })) ||
+    (host.user && (await User.findById(host.user)));
 
   if (user) {
     if (String(user.role).toLowerCase() !== "admin") user.role = "Host";

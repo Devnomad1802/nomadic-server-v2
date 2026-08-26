@@ -392,7 +392,14 @@ export const login = async (req, res) => {
   if (![email, password].every(Boolean))
     throw new BadRequest("Please fill all inputs!");
 
-  const user = await User.findOneAndUpdate({ email }, { isLoggedIn: false }).select("+password");
+  // Match email case-insensitively + trimmed. Stored emails vary in case
+  // (e.g. an admin-activated host login created from host.emailAddress), so an
+  // exact match would reject a correct password with "Incorrect email".
+  const emailNorm = String(email).trim();
+  const user = await User.findOneAndUpdate(
+    { email: { $regex: `^${emailNorm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" } },
+    { isLoggedIn: false }
+  ).select("+password");
 
   if (!user || !(await user.matchesPassword(password))) {
     throw new BadRequest("Incorrect email or password");
