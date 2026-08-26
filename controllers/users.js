@@ -88,7 +88,7 @@ export const register = async (req, res) => {
     await user.save();
     if (role === "Admin") {
       await sendVerificationMailAdmin(user);
-      const token = await logIn({ _id: user?._id });
+      const token = await logIn({ _id: user?._id, role: user?.role });
 
       res.status(201).json({
         success: true,
@@ -97,7 +97,7 @@ export const register = async (req, res) => {
       });
     } else {
       await sendVerificationMail(user);
-      const token = await logIn({ _id: user?._id });
+      const token = await logIn({ _id: user?._id, role: user?.role });
 
       res.status(201).json({
         success: true,
@@ -363,7 +363,7 @@ export const verifySMSCode = async (req, res) => {
       { _id: user._id },
       { twoStepVerification: true, isLoggedIn: true }
     );
-    const token = await logIn({ _id: user?._id });
+    const token = await logIn({ _id: user?._id, role: user?.role });
 
     //   return res.status(200).json({
     //     status: verification_check?.status,
@@ -398,7 +398,7 @@ export const login = async (req, res) => {
     throw new BadRequest("Incorrect email or password");
   }
 
-  const token = await logIn({ _id: user?._id });
+  const token = await logIn({ _id: user?._id, role: user?.role });
 
   res.status(200).json({
     success: true,
@@ -869,7 +869,7 @@ const getRedirectBodytwo = (message) => `
 // Google OAuth Callback
 export const googleCallback = async (req, res) => {
   try {
-    const token = await logIn({ _id: req.user._id });
+    const token = await logIn({ _id: req.user._id, role: req.user?.role });
     const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
     const userData = encodeURIComponent(JSON.stringify({
       _id: req.user._id,
@@ -911,6 +911,6 @@ export const verifyEmailOtpHandler = async (req, res) => {
   if (!user) {
     user = await User.create({ email, isVerified: true, name: '', phone: '' });
   }
-  const token = await logIn({ _id: user._id });
+  const token = await logIn({ _id: user._id, role: user?.role });
   res.status(200).json({ success: true, token, user, isNewUser, message: 'Login successful' });
 };
