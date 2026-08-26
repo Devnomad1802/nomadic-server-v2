@@ -163,6 +163,7 @@ export const activateHost = async (req, res) => {
   host.user = user._id;
   host.status = "approved";
   host.isVerified = true;
+  host.dashboardAccess = true; // activation is what enables dashboard login
   await host.save();
 
   await notifyHost(
