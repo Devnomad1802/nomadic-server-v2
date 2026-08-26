@@ -141,16 +141,23 @@ export const activateHost = async (req, res) => {
   // create one. Always set a new password so the email always carries a working
   // one.
   const tempPassword = crypto.randomBytes(9).toString("base64url"); // ~12 chars
-  // Resolve the account the way login does — by email (case-insensitive) — so
-  // the password we reset is the one the host's login will actually check.
-  // Fall back to the linked host.user only if no email match exists.
+  // The host's login account is ALWAYS the User whose email == host.emailAddress
+  // (that's what login checks). Resolve strictly by that email — never trust a
+  // stale host.user link, which can point at the wrong account (e.g. the admin
+  // who created the host). Resetting that would hijack another account.
   const emailRe = `^${String(host.emailAddress).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`;
-  let user =
-    (await User.findOne({ email: { $regex: emailRe, $options: "i" } })) ||
-    (host.user && (await User.findById(host.user)));
+  let user = await User.findOne({ email: { $regex: emailRe, $options: "i" } });
+
+  // Never touch an admin account through this flow.
+  if (user && String(user.role).toLowerCase() === "admin") {
+    return res.status(409).json({
+      success: false,
+      message: "This email belongs to an admin account — use a different host email.",
+    });
+  }
 
   if (user) {
-    if (String(user.role).toLowerCase() !== "admin") user.role = "Host";
+    user.role = "Host";
     user.password = tempPassword; // reset — hashed by the User pre-save hook
     user.isVerified = true;
     await user.save();
@@ -164,7 +171,7 @@ export const activateHost = async (req, res) => {
     }).save();
   }
 
-  host.user = user._id;
+  host.user = user._id; // (re)link to the correct host-owned account
   host.status = "approved";
   host.isVerified = true;
   host.dashboardAccess = true; // activation enables dashboard login
