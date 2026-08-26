@@ -255,6 +255,26 @@ export const confirmBooking = async (req, res) => {
     if (dietary !== undefined) booking.dietary = dietary;
     if (roomType !== undefined) booking.roomType = roomType;
     booking.DateOfBooking = new Date();
+
+    // Populate the top-level contact fields the Admin bookings list, search, and
+    // detail view read (userName/email/phone). The secure flow only stored the
+    // travellers array, leaving these blank so new bookings showed no details.
+    // Source them from the lead traveller, falling back to the account user.
+    try {
+      const lead = Array.isArray(booking.travellers)
+        ? booking.travellers.find((t) => t?.isLead) || booking.travellers[0]
+        : null;
+      let acct = null;
+      if ((!lead || !lead.email || !lead.name || !lead.phone) && booking.userId) {
+        acct = await User.findById(booking.userId).select("name email phone");
+      }
+      booking.userName = booking.userName || lead?.name || acct?.name || "";
+      booking.email = booking.email || lead?.email || acct?.email || "";
+      booking.phone = booking.phone || lead?.phone || acct?.phone || "";
+    } catch (e) {
+      console.error("booking contact backfill failed:", e?.message || e);
+    }
+
     // Invoice number: assigned exactly once, only after a VERIFIED payment.
     if (!booking.invoiceNumber) {
       try {
