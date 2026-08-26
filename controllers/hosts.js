@@ -583,6 +583,33 @@ export const updateHost = async (req, res, next) => {
 
       const updateData = { ...req.body };
 
+      // ── Guard against partial-update data loss (run before validation) ──
+      // The Add/Edit form re-submits every field on every save. Sensitive
+      // financial fields are trimmed from non-privileged host fetches, so if the
+      // edit form ever loads without them it would send empty strings that both
+      // fail the required-field check below AND wipe the stored values. Treat an
+      // empty/whitespace value for these as "not provided" and keep what's in the
+      // DB — a real change always sends a non-empty value. (These fields are
+      // never intentionally cleared to blank.)
+      [
+        "bankName",
+        "accountHolderName",
+        "accountNumber",
+        "ifscCode",
+        "panNumber",
+        "gstNumber",
+        "commissionRate",
+      ].forEach((k) => {
+        if (updateData[k] !== undefined && String(updateData[k]).trim() === "") {
+          delete updateData[k];
+        }
+      });
+      // Multiple bank accounts: an empty array means "form had none loaded",
+      // never "delete them all" — keep the stored accounts in that case.
+      if (Array.isArray(updateData.bankAccounts) && updateData.bankAccounts.length === 0) {
+        delete updateData.bankAccounts;
+      }
+
       // Validate required fields that are being updated
       if ((updateData.hostName !== undefined && !updateData.hostName) ||
           (updateData.emailAddress !== undefined && !updateData.emailAddress) ||
@@ -953,6 +980,33 @@ export const updateHostPartial = async (req, res, next) => {
       }
 
       const updateData = { ...req.body };
+
+      // ── Guard against partial-update data loss (run before validation) ──
+      // The Add/Edit form re-submits every field on every save. Sensitive
+      // financial fields are trimmed from non-privileged host fetches, so if the
+      // edit form ever loads without them it would send empty strings that both
+      // fail the required-field check below AND wipe the stored values. Treat an
+      // empty/whitespace value for these as "not provided" and keep what's in the
+      // DB — a real change always sends a non-empty value. (These fields are
+      // never intentionally cleared to blank.)
+      [
+        "bankName",
+        "accountHolderName",
+        "accountNumber",
+        "ifscCode",
+        "panNumber",
+        "gstNumber",
+        "commissionRate",
+      ].forEach((k) => {
+        if (updateData[k] !== undefined && String(updateData[k]).trim() === "") {
+          delete updateData[k];
+        }
+      });
+      // Multiple bank accounts: an empty array means "form had none loaded",
+      // never "delete them all" — keep the stored accounts in that case.
+      if (Array.isArray(updateData.bankAccounts) && updateData.bankAccounts.length === 0) {
+        delete updateData.bankAccounts;
+      }
 
       // Validate required fields that are being updated
       if ((updateData.hostName !== undefined && !updateData.hostName) ||
