@@ -131,26 +131,26 @@ export const activateHost = async (req, res) => {
   if (!host) {
     return res.status(404).json({ success: false, message: "Host not found" });
   }
-  if (host.user) {
-    return res.status(409).json({ success: false, message: "Host already has a linked login account." });
-  }
   if (!host.emailAddress) {
     return res.status(400).json({ success: false, message: "Host has no email address." });
   }
 
-  // Link an existing User with this email, or create a fresh one.
-  let user = await User.findOne({
-    email: { $regex: `^${host.emailAddress}$`, $options: "i" },
-  });
-  let tempPassword = null;
+  // Idempotent activate / resend: every click (re)issues a fresh temporary
+  // password and re-emails the dashboard link + credentials — whether or not a
+  // login account already exists. Find the linked user (by id or email), or
+  // create one. Always set a new password so the email always carries a working
+  // one.
+  const tempPassword = crypto.randomBytes(9).toString("base64url"); // ~12 chars
+  let user =
+    (host.user && (await User.findById(host.user))) ||
+    (await User.findOne({ email: { $regex: `^${host.emailAddress}$`, $options: "i" } }));
 
   if (user) {
-    if (String(user.role).toLowerCase() !== "admin") {
-      user.role = "Host";
-      await user.save();
-    }
+    if (String(user.role).toLowerCase() !== "admin") user.role = "Host";
+    user.password = tempPassword; // reset — hashed by the User pre-save hook
+    user.isVerified = true;
+    await user.save();
   } else {
-    tempPassword = crypto.randomBytes(9).toString("base64url"); // ~12 chars
     user = await new User({
       name: host.hostTitle || host.hostName || "Host",
       email: host.emailAddress,
@@ -163,32 +163,35 @@ export const activateHost = async (req, res) => {
   host.user = user._id;
   host.status = "approved";
   host.isVerified = true;
-  host.dashboardAccess = true; // activation is what enables dashboard login
+  host.dashboardAccess = true; // activation enables dashboard login
   await host.save();
+
+  const dashboardUrl = `${process.env.HOST_DASHBOARD_URL || "https://host.nomadictownies.com"}/login`;
 
   await notifyHost(
     host._id,
     "account",
-    "Welcome to your Host Dashboard",
-    "Your host account has been approved and your dashboard login is active."
+    "Your Host Dashboard login",
+    "Your dashboard login credentials have been emailed to you."
   );
 
-  // Email credentials / welcome. Failure is non-fatal: the admin gets the
-  // temp password back in the response to share manually.
+  // Email credentials + dashboard link. Failure is non-fatal: the admin gets
+  // the temp password back in the response to share manually.
   let emailSent = false;
   try {
     const resend = new Resend(process.env.RESEND_API_KEY);
     const sent = await resend.emails.send({
       from: "Nomadic Townies <noreply@nomadictownies.com>",
       to: host.emailAddress,
-      subject: "Your Nomadic Townies Host Dashboard is ready",
+      subject: "Your Nomadic Townies Host Dashboard login",
       html: `
         <p>Hi ${host.hostTitle || host.hostName},</p>
-        <p>Your host application has been approved. You can now sign in to your Host Dashboard.</p>
-        <p><b>Email:</b> ${host.emailAddress}<br/>
-        ${tempPassword ? `<b>Temporary password:</b> ${tempPassword}<br/>` : "Use your existing account password.<br/>"}
-        </p>
-        <p>Please change your password after your first login.</p>
+        <p>Your Host Dashboard is ready. Sign in with the credentials below:</p>
+        <p><b>Dashboard:</b> <a href="${dashboardUrl}">${dashboardUrl}</a><br/>
+        <b>Email:</b> ${host.emailAddress}<br/>
+        <b>Temporary password:</b> ${tempPassword}</p>
+        <p style="margin:18px 0"><a href="${dashboardUrl}" style="background:#CF4A2C;color:#fff;text-decoration:none;padding:12px 24px;border-radius:10px;font-weight:700;display:inline-block">Open your dashboard →</a></p>
+        <p>Please change your password after your first login. This password replaces any previous one.</p>
         <p>— Nomadic Townies</p>`,
     });
     // Resend v1 returns { data, error } rather than throwing.
@@ -200,15 +203,14 @@ export const activateHost = async (req, res) => {
 
   return res.status(200).json({
     success: true,
-    message: `Host activated${emailSent ? " and credentials emailed" : " (email failed — share credentials manually)"}.`,
+    message: `Credentials ${emailSent ? "emailed to the host" : "generated (email failed — share manually)"}.`,
     data: {
       hostId: host._id,
       userId: user._id,
       email: host.emailAddress,
       emailSent,
-      // Only returned when a new account was created AND the email failed,
-      // so the admin can pass credentials on manually.
-      ...(tempPassword && !emailSent ? { tempPassword } : {}),
+      // Returned only when the email failed, so the admin can share manually.
+      ...(!emailSent ? { tempPassword } : {}),
     },
   });
 };
