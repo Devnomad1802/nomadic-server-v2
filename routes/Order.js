@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { catchAsync } from "../middlewares/index.js";
-import { order, validate, createSecureOrder, confirmBooking, createBalanceOrder, confirmBalancePayment, downloadInvoice } from "../controllers/Order.js";
+import { order, validate, createSecureOrder, confirmBooking, createBalanceOrder, confirmBalancePayment, downloadInvoice, paymentWebhook } from "../controllers/Order.js";
 import passport from "passport";
 
 export const OrderRoute = Router();
@@ -14,6 +14,10 @@ OrderRoute.post("/createBalanceOrder", auth, catchAsync(createBalanceOrder));
 OrderRoute.post("/confirmBalancePayment", auth, catchAsync(confirmBalancePayment));
 // Invoice PDF (owner or Admin) — always the latest saved booking state.
 OrderRoute.get("/invoice/:bookingId", auth, catchAsync(downloadInvoice));
+
+// ── Razorpay payment webhook (public, HMAC-verified). Safety net that finalizes
+// a paid-but-unconfirmed booking if the client never calls confirmBooking. ──
+OrderRoute.post("/booking/payment-webhook", catchAsync(paymentWebhook));
 
 // ── Legacy endpoints (kept temporarily for the currently-deployed client). ──
 // TODO: remove once the new client is live everywhere.
