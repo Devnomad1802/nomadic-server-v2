@@ -24,12 +24,43 @@ async function hostRatingMap(hostIds) {
 import {
   BadRequest,
   CustomError,
+  ValidationError,
   uploadFilesToS3,
   uploadHostFilesToS3,
   deleteFromS3,
   deleteMultipleFromS3,
 } from "../middlewares/index.js";
 import { sanitizeReels, reelAssetUrls } from "../utils/instagramReels.js";
+
+// Field-level, human-readable messages for the required host fields — used to
+// return per-field validation errors the Admin form can highlight.
+const REQUIRED_HOST_FIELDS = {
+  hostName: "Please enter the host's name.",
+  emailAddress: "Please enter the host's email address.",
+  phoneNumber: "Please enter the host's phone number.",
+  bankName: "Please enter the bank name.",
+  accountHolderName: "Please enter the account holder's name.",
+  accountNumber: "Please enter the account number.",
+  ifscCode: "Please enter the IFSC code.",
+};
+
+// Missing required fields as a { field: message } map (empty when all present).
+const missingRequiredHostFields = (src) => {
+  const fields = {};
+  for (const [k, msg] of Object.entries(REQUIRED_HOST_FIELDS)) {
+    if (!src?.[k] || !String(src[k]).trim()) fields[k] = msg;
+  }
+  return fields;
+};
+
+// Duplicate email/PAN as a { field: message } map.
+const duplicateHostFields = (dup, { emailAddress, panNumber } = {}) => {
+  const fields = {};
+  if (emailAddress && dup?.emailAddress === emailAddress) fields.emailAddress = "This email is already used by another host.";
+  if (panNumber && dup?.panNumber === panNumber) fields.panNumber = "This PAN number is already used by another host.";
+  if (!Object.keys(fields).length) fields.emailAddress = "A host with these details already exists.";
+  return fields;
+};
 // RazorpayX imports commented out for now
 // import { createContactService, createFundAccountService, updateContactService } from "../services/razorpayxService.js";
 
@@ -75,7 +106,7 @@ export const createHost = async (req, res, next) => {
     if (err) {
       // Clean up any partially uploaded files
       await cleanupUploadedFiles(req);
-      return next(new BadRequest(`Failed to upload files: ${err.message}`));
+      return next(err); // raw error → normalized to a friendly, field-level upload message
     }
 
     try {
@@ -159,10 +190,11 @@ export const createHost = async (req, res, next) => {
         bankAccounts,
       } = req.body;
 
-      if(!hostName || !emailAddress || !phoneNumber || !bankName || !accountHolderName || !accountNumber || !ifscCode) {
+      const missing = missingRequiredHostFields({ hostName, emailAddress, phoneNumber, bankName, accountHolderName, accountNumber, ifscCode });
+      if (Object.keys(missing).length) {
         // Clean up uploaded files if validation fails
         await cleanupUploadedFiles(req);
-        return next(new BadRequest(" hostName, emailAddress, phoneNumber, bankName, accountHolderName, accountNumber, ifscCode are required"));
+        return next(new ValidationError(missing));
       }
 
       // Check if host already exists with same email or PAN.
@@ -176,9 +208,7 @@ export const createHost = async (req, res, next) => {
       if (existingHost) {
         // If host exists, clean up uploaded files
         await cleanupUploadedFiles(req);
-        return next(
-          new BadRequest("Host with this email or PAN number already exists")
-        );
+        return next(new ValidationError(duplicateHostFields(existingHost, { emailAddress, panNumber })));
       }
 
       // Process uploaded files
@@ -579,7 +609,7 @@ export const updateHost = async (req, res, next) => {
     if (err) {
       // Clean up any partially uploaded files
       await cleanupUploadedFiles(req);
-      return next(new BadRequest(`Failed to upload files: ${err.message}`));
+      return next(err); // raw error → normalized to a friendly, field-level upload message
     }
 
     try {
@@ -619,17 +649,15 @@ export const updateHost = async (req, res, next) => {
         delete updateData.bankAccounts;
       }
 
-      // Validate required fields that are being updated
-      if ((updateData.hostName !== undefined && !updateData.hostName) ||
-          (updateData.emailAddress !== undefined && !updateData.emailAddress) ||
-          (updateData.phoneNumber !== undefined && !updateData.phoneNumber) ||
-          (updateData.bankName !== undefined && !updateData.bankName) ||
-          (updateData.accountHolderName !== undefined && !updateData.accountHolderName) ||
-          (updateData.accountNumber !== undefined && !updateData.accountNumber) ||
-          (updateData.ifscCode !== undefined && !updateData.ifscCode)) {
+      // Validate required fields that are being updated (present but blank).
+      const updateMissing = {};
+      for (const [k, msg] of Object.entries(REQUIRED_HOST_FIELDS)) {
+        if (updateData[k] !== undefined && !String(updateData[k]).trim()) updateMissing[k] = msg;
+      }
+      if (Object.keys(updateMissing).length) {
         // Clean up uploaded files if validation fails
         await cleanupUploadedFiles(req);
-        return next(new BadRequest("hostName, emailAddress, phoneNumber, bankName, accountHolderName, accountNumber, ifscCode are required"));
+        return next(new ValidationError(updateMissing));
       }
 
       // Check for duplicate email or PAN if they're being updated
@@ -652,9 +680,10 @@ export const updateHost = async (req, res, next) => {
         if (duplicateCheck) {
           // Clean up uploaded files if duplicate found
           await cleanupUploadedFiles(req);
-          return next(
-            new BadRequest("Host with this email or PAN number already exists")
-          );
+          return next(new ValidationError(duplicateHostFields(duplicateCheck, {
+            emailAddress: updateData.emailAddress,
+            panNumber: updateData.panNumber,
+          })));
         }
       }
 
@@ -977,7 +1006,7 @@ export const updateHostPartial = async (req, res, next) => {
     if (err) {
       // Clean up any partially uploaded files
       await cleanupUploadedFiles(req);
-      return next(new BadRequest(`Failed to upload files: ${err.message}`));
+      return next(err); // raw error → normalized to a friendly, field-level upload message
     }
 
     try {

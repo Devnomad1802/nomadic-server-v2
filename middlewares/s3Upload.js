@@ -526,11 +526,9 @@ export const uploadHostFilesToS3 = (fields) => {
     const uploadMiddleware = uploadAdvanced.fields(fields);
 
     uploadMiddleware(req, res, async (error) => {
-      if (error instanceof multer.MulterError) {
-        return res.status(400).json({ error: "Multer error: " + error.message });
-      } else if (error) {
-        return res.status(500).json({ error: "File upload error: " + error.message });
-      }
+      // Forward upload errors to the central error handler so they become
+      // friendly, field-level messages (Multer code + field are preserved).
+      if (error) return next(error);
 
       try {
         if (req.files) {

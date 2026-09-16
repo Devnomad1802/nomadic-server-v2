@@ -20,3 +20,17 @@ export class CustomError extends Error{
     this.status=status
   }
 }
+
+/**
+ * ValidationError — carries per-field, human-readable messages so the frontend
+ * can highlight the exact fields. `fields` maps a form field name to its
+ * message, e.g. { panNumber: "Enter a valid PAN number." }.
+ */
+export class ValidationError extends Error {
+  constructor(fields = {}, message = "Please fix the highlighted fields.") {
+    super(message);
+    this.status = 400;
+    this.type = "VALIDATION_ERROR";
+    this.fields = fields;
+  }
+}
