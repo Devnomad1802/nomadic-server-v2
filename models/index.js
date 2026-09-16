@@ -12,5 +12,6 @@ export * from "./enquire.js";
 export * from "./bookings.js";
 export * from "./coverImages.js";
 export * from "./hosts.js";
+export * from "./formDrafts.js";
 export * from "./UserReviews.js";
 export { default as Seo } from "./Seo.js";
