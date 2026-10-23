@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { catchAsync } from "../middlewares/index.js";
+import { catchAsync, isAdmin } from "../middlewares/index.js";
 import {
   addCoupon,
   getAllCoupon,
@@ -12,18 +12,18 @@ import passport from "passport";
 export const CouponRouts = Router();
 CouponRouts.post(
   "/addCoupon",
-  // passport.authenticate("jwt", { session: false }),
+  isAdmin,
   catchAsync(addCoupon)
 );
 CouponRouts.post(
   "/updateCoupon",
-  // passport.authenticate("jwt", { session: false }),
+  isAdmin,
   catchAsync(updateCoupon)
 );
 
 CouponRouts.delete(
-  // "/deleteCoupon",
-  // passport.authenticate("jwt", { session: false }),
+  "/deleteCoupon",
+  isAdmin,
   catchAsync(deleteCoupon)
 );
 CouponRouts.get(
