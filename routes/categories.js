@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { catchAsync } from "../middlewares/index.js";
+import { catchAsync, isAdmin } from "../middlewares/index.js";
 import {
   addCategories,
   getAllCategories,
@@ -11,12 +11,12 @@ import passport from "passport";
 export const CategoriesRouts = Router();
 CategoriesRouts.post(
   "/addCategories",
-  // passport.authenticate("jwt", { session: false }),
+  isAdmin,
   catchAsync(addCategories)
 );
 CategoriesRouts.delete(
   "/deleteCategories",
-  // passport.authenticate("jwt", { session: false }),
+  isAdmin,
   catchAsync(deleteCategories)
 );
 CategoriesRouts.get(
@@ -27,7 +27,7 @@ CategoriesRouts.get(
 
 CategoriesRouts.put(
   "/updateCategory",
-  // passport.authenticate("jwt", { session: false }),
+  isAdmin,
   catchAsync(updateCategory)
 );
 

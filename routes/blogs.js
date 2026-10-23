@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { catchAsync } from "../middlewares/index.js";
+import { catchAsync, isAdmin } from "../middlewares/index.js";
 import {
   blogtest,
   addBlog,
@@ -19,12 +19,12 @@ BlogRouts.get(
 );
 BlogRouts.post(
   "/addBlog",
-  // passport.authenticate("jwt", { session: false }),
+  isAdmin,
   catchAsync(addBlog)
 );
 BlogRouts.delete(
   "/deleteBlog",
-  // passport.authenticate("jwt", { session: false }),
+  isAdmin,
   catchAsync(deleteBlog)
 );
 BlogRouts.get(
@@ -34,17 +34,17 @@ BlogRouts.get(
 );
 BlogRouts.post(
   "/updateBlog",
-  // passport.authenticate("jwt", { session: false }),
+  isAdmin,
   catchAsync(updateBlog)
 );
 BlogRouts.delete(
   "/deleteBlogImage",
-  // passport.authenticate("jwt", { session: false }),
+  isAdmin,
   catchAsync(deleteBlogImage)
 );
 BlogRouts.post(
   "/uploadBlogImage",
-  // passport.authenticate("jwt", { session: false }),
+  isAdmin,
   catchAsync(uploadBlogImage)
 );
 export default BlogRouts;

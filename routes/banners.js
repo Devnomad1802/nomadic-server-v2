@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { catchAsync } from "../middlewares/index.js";
+import { catchAsync, isAdmin } from "../middlewares/index.js";
 import {
   addBanner,
   getAllBanner,
@@ -12,12 +12,12 @@ import passport from "passport";
 export const BannerRouts = Router();
 BannerRouts.post(
   "/addBanner",
-  // passport.authenticate("jwt", { session: false }),
+  isAdmin,
   catchAsync(addBanner)
 );
 BannerRouts.delete(
   "/deleteBanner",
-  // passport.authenticate("jwt", { session: false }),
+  isAdmin,
   catchAsync(deleteBanner)
 );
 BannerRouts.get(
@@ -29,12 +29,12 @@ BannerRouts.get(
 // Single card image management
 BannerRouts.delete(
   "/deleteCardImage",
-  // passport.authenticate("jwt", { session: false }),
+  isAdmin,
   catchAsync(deleteBannerCardImage)
 );
 BannerRouts.post(
   "/uploadCardImage",
-  // passport.authenticate("jwt", { session: false }),
+  isAdmin,
   catchAsync(uploadBannerCardImage)
 );
 

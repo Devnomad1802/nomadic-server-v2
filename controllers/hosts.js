@@ -1520,6 +1520,7 @@ export const getHostsBySpecialty = async (req, res) => {
   };
 
   const hosts = await Host.find(filter)
+    .select("-bankName -accountNumber -ifscCode -accountHolderName -panNumber -gstNumber -documents -contact_id -fund_account_id -commissionRate")
     .limit(limit * 1)
     .skip((page - 1) * limit)
     .exec();
@@ -1555,6 +1556,7 @@ export const getHostsByLocation = async (req, res) => {
   };
 
   const hosts = await Host.find(filter)
+    .select("-bankName -accountNumber -ifscCode -accountHolderName -panNumber -gstNumber -documents -contact_id -fund_account_id -commissionRate")
     .limit(limit * 1)
     .skip((page - 1) * limit)
     .exec();

@@ -1,33 +1,34 @@
 import { Router } from "express";
-import { catchAsync } from "../middlewares/index.js";
+import { catchAsync, isAdmin } from "../middlewares/index.js";
 import {
   initateEnquery,
   getAllEnquries,
   replyEnquery,
   deleteEnqurie,
 } from "../controllers/enquire.js";
-import passport from "passport";
 export const EnquireRouts = Router();
+// Public: the website contact form submits here.
 EnquireRouts.post(
   "/initateEnquery",
-  // passport.authenticate("jwt", { session: false }),
   catchAsync(initateEnquery)
 );
+// Admin only: reply contains staff response; was any-logged-in-user.
 EnquireRouts.post(
   "/replyEnquery",
-  passport.authenticate("jwt", { session: false }),
+  isAdmin,
   catchAsync(replyEnquery)
 );
 
-// EnquireRouts.delete("/deleteReview", catchAsync(deleteReview));
+// Admin only: this returns customer contact PII (name/email/phone/message) —
+// was PUBLIC, exposing every enquiry to anyone.
 EnquireRouts.get(
   "/getAllEnquries",
-  // passport.authenticate("jwt", { session: false }),
+  isAdmin,
   catchAsync(getAllEnquries)
 );
 EnquireRouts.post(
   "/deleteEnqurie",
-  passport.authenticate("jwt", { session: false }),
+  isAdmin,
   catchAsync(deleteEnqurie)
 );
 export default EnquireRouts;

@@ -1,7 +1,7 @@
 // ------------------------- user review routes -------------------------
 import { Router } from "express";
 import passport from "passport";
-import { catchAsync, uploadCoverImagesToS3 } from "../middlewares/index.js";
+import { catchAsync, uploadCoverImagesToS3, isAdmin } from "../middlewares/index.js";
 import { addUserReview, getUserReviews, getAllUsersReviews, getAllReviewsByHostId, getuserReviewsByTripId, deleteUserReview, submitTripReview, getMyReviews, getMyPendingReviews } from "../controllers/UserReviews.js";
 
 export const UserReviewsRoutes = Router();
@@ -40,8 +40,9 @@ UserReviewsRoutes.get("/getAllReviewsByHostId", catchAsync(getAllReviewsByHostId
 UserReviewsRoutes.post("/getAllReviewsByHostId", catchAsync(getAllReviewsByHostId));
 UserReviewsRoutes.get("/getUserReviewsByHostId/:tripId", catchAsync(getuserReviewsByTripId));
 
-// Delete a review by id (admin host-review manager)
-UserReviewsRoutes.delete("/deleteUserReview/:id", catchAsync(deleteUserReview));
-UserReviewsRoutes.delete("/deleteUserReview", catchAsync(deleteUserReview));
+// Delete a review by id (admin host-review manager) — admin only: was
+// unauthenticated, letting anyone delete any review by id (destructive IDOR).
+UserReviewsRoutes.delete("/deleteUserReview/:id", isAdmin, catchAsync(deleteUserReview));
+UserReviewsRoutes.delete("/deleteUserReview", isAdmin, catchAsync(deleteUserReview));
 
 export default UserReviewsRoutes;
