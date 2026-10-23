@@ -652,7 +652,7 @@ export const GetTripsByCagtegory = async (req, res) => {
     // Fetch all trips and filter in memory to handle both array format and legacy comma-separated format
     // (exclude host proposals awaiting/denied admin approval)
     const allTrips = await Trips.find({ Status: { $nin: ["pending", "rejected"] } })
-      .populate('host')
+      .populate('host', '-bankName -accountNumber -ifscCode -accountHolderName -panNumber -gstNumber -documents -contact_id -fund_account_id -commissionRate')
       .sort({ date: -1 });
 
     // Filter trips where any category matches
@@ -743,7 +743,7 @@ export const GetAllTripsWithFilter = async (req, res) => {
     const trips = await Trips.find({
       $and: [{ $or: [{ status: status }, { type: type }] }, approvalGate],
     })
-      .populate('host')
+      .populate('host', '-bankName -accountNumber -ifscCode -accountHolderName -panNumber -gstNumber -documents -contact_id -fund_account_id -commissionRate')
       .limit(limit)
       .skip(skip)
       .sort({ date: -1 });
