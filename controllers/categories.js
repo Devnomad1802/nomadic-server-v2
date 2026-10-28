@@ -1,4 +1,4 @@
-import { Categories } from "../models/index.js";
+import { Categories, Trips } from "../models/index.js";
 import { uploadFilesToS3, deleteMultipleFromS3 } from "../middlewares/index.js";
 
 // Helper to clean up any files uploaded during the current request
@@ -28,7 +28,13 @@ export const addCategories = async (req, res) => {
       await cleanupUploadedFiles(req);
       return res.status(500).json({ error: "Failed to upload files" });
     }
-    const { Category, Starting_From } = req.body;
+    const { Starting_From } = req.body;
+    // Normalise the display name on the way in so trailing/duplicate spaces
+    // never create a mismatch with trip category tags.
+    const Category =
+      typeof req.body.Category === "string"
+        ? req.body.Category.trim().replace(/\s+/g, " ")
+        : req.body.Category;
     try {
       // Process uploaded files from S3
       let Banner_Image = null;
@@ -99,9 +105,18 @@ export const updateCategory = async (req, res) => {
       }
 
       const updates = {};
-      
+
+      // Normalise the incoming name and detect a rename so we can keep every
+      // trip's category tag in sync (the trip<->category link is the string
+      // name, so a rename without this cascade would orphan tagged trips).
+      const oldName = existingCategory.Category;
+      const newName =
+        typeof Category === "string"
+          ? Category.trim().replace(/\s+/g, " ")
+          : undefined;
+
       // Update fields if provided
-      if (Category) updates.Category = Category;
+      if (newName) updates.Category = newName;
       if (Starting_From) updates.Starting_From = Starting_From;
       
       // Handle Banner_Image update if new file is uploaded
@@ -137,9 +152,22 @@ export const updateCategory = async (req, res) => {
         { new: true }
       );
 
+      // Cascade a rename to every trip tagged with the old name so the
+      // category page keeps resolving its trips (no orphaning / no drift).
+      let tripsUpdated = 0;
+      if (newName && oldName && newName !== oldName) {
+        const result = await Trips.updateMany(
+          { categories: oldName },
+          { $set: { "categories.$[el]": newName } },
+          { arrayFilters: [{ el: oldName }] }
+        );
+        tripsUpdated = result?.modifiedCount ?? 0;
+      }
+
       return res.status(200).json({
         message: "Category updated successfully",
-        data: updatedCategory
+        data: updatedCategory,
+        tripsUpdated,
       });
     } catch (error) {
       console.error("Error updating category:", error);
