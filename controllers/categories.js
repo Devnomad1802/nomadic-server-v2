@@ -1,6 +1,40 @@
 import { Categories, Trips } from "../models/index.js";
 import { uploadFilesToS3, deleteMultipleFromS3 } from "../middlewares/index.js";
 
+const ciEq = (a, b) =>
+  String(a ?? "").trim().toLowerCase() === String(b ?? "").trim().toLowerCase();
+
+// A trip's `categories` entries may be plain names ("INDIA") OR a JSON-
+// stringified array ('["INDIA","GROUP TOUR"]'), because the admin trip form
+// submits JSON.stringify(categories). Rewrite every occurrence of `oldName`
+// to `newName` in-place while preserving whichever shape was stored.
+// Returns the new array, or null when nothing changed.
+export const renameInTripCategories = (categories, oldName, newName) => {
+  if (!Array.isArray(categories)) return null;
+  let changed = false;
+  const next = categories.map((raw) => {
+    if (typeof raw !== "string") return raw;
+    const str = raw.trim();
+    if (/^\[.*\]$/.test(str)) {
+      try {
+        const arr = JSON.parse(str);
+        if (Array.isArray(arr)) {
+          let innerChanged = false;
+          const mapped = arr.map((x) => {
+            if (ciEq(x, oldName)) { innerChanged = true; return newName; }
+            return x;
+          });
+          if (innerChanged) { changed = true; return JSON.stringify(mapped); }
+          return raw;
+        }
+      } catch { /* not valid JSON — treat as a plain name below */ }
+    }
+    if (ciEq(str, oldName)) { changed = true; return newName; }
+    return raw;
+  });
+  return changed ? next : null;
+};
+
 // Helper to clean up any files uploaded during the current request
 const cleanupUploadedFiles = async (req) => {
   if (!req.uploadedFiles) return;
@@ -154,14 +188,22 @@ export const updateCategory = async (req, res) => {
 
       // Cascade a rename to every trip tagged with the old name so the
       // category page keeps resolving its trips (no orphaning / no drift).
+      // Trip tags are stored as JSON-stringified blobs, so match loosely by
+      // substring then rewrite each matched doc precisely (case-insensitive).
       let tripsUpdated = 0;
-      if (newName && oldName && newName !== oldName) {
-        const result = await Trips.updateMany(
-          { categories: oldName },
-          { $set: { "categories.$[el]": newName } },
-          { arrayFilters: [{ el: oldName }] }
-        );
-        tripsUpdated = result?.modifiedCount ?? 0;
+      if (newName && oldName && !ciEq(newName, oldName)) {
+        const esc = oldName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const candidates = await Trips.find({
+          categories: { $elemMatch: { $regex: esc, $options: "i" } },
+        }).select("categories");
+        for (const trip of candidates) {
+          const next = renameInTripCategories(trip.categories, oldName, newName);
+          if (next) {
+            trip.categories = next;
+            await trip.save();
+            tripsUpdated += 1;
+          }
+        }
       }
 
       return res.status(200).json({
