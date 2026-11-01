@@ -58,6 +58,11 @@ const userSchema = mongoose.Schema({
   batchIndex: { type: Number, required: false },
   travellersCount: { type: Number, required: false },
   paymentType: { type: String, required: false },    // "full" | "firstPayment"
+  // Razorpay environment this booking's order was created against. "live" for
+  // real customer bookings; "test" only for the authorized sandbox account in a
+  // non-production/staging environment. Lets confirm pick the right secret and
+  // keeps test records isolated from genuine revenue/reporting.
+  mode: { type: String, enum: ["live", "test"], default: "live", index: true },
 
   // ── Invoice (assigned once, after the first verified payment) ──
   invoiceNumber: { type: String, required: false },

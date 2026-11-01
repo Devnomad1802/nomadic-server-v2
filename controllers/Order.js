@@ -4,8 +4,14 @@ import crypto from "crypto";
 import { BadRequest, CustomError } from "../middlewares/index.js";
 import { Bookings, Trips, User } from "../models/index.js";
 import { isPartialAllowed, fmtBalanceDueDate } from "../utils/partialPayment.js";
+import { secretForMode, keysForMode } from "../services/paymentAvailability.js";
 
 const { RAZORPAY_KEY_SECRET, RAZORPAY_KEY_ID } = process.env;
+
+// Razorpay credentials for this request: set by paymentGate (live or isolated
+// test), falling back to live env for any path the gate did not run on.
+const rzpKeysFor = (req) =>
+  req?.rzpKeys || { key_id: RAZORPAY_KEY_ID, key_secret: RAZORPAY_KEY_SECRET };
 
 // Best-effort invoice PDF for email attachment; never breaks the flow.
 const invoiceAttachment = async (booking, user) => {
@@ -123,12 +129,14 @@ export const createSecureOrder = async (req, res) => {
     const chargeNow = wantPartial && partialAllowed && firstPrice > 0 && firstPrice < calc.total ? firstPrice : calc.total;
     const finalType = chargeNow === calc.total ? "full" : "firstPayment";
 
-    const razorpay = new Razorpay({ key_id: RAZORPAY_KEY_ID, key_secret: RAZORPAY_KEY_SECRET });
+    const keys = rzpKeysFor(req);
+    const mode = req.paymentMode || "live";
+    const razorpay = new Razorpay({ key_id: keys.key_id, key_secret: keys.key_secret });
     const order = await razorpay.orders.create({
       amount: chargeNow * 100, // paise
       currency: "INR",
       receipt: `rcpt_${Date.now()}`, // Razorpay limit: <= 40 chars
-      notes: { tripId: `${tripId}`, userId: `${userId}` },
+      notes: { tripId: `${tripId}`, userId: `${userId}`, mode },
     });
     if (!order?.id) return res.status(502).json({ error: "Could not create payment order" });
 
@@ -170,6 +178,7 @@ export const createSecureOrder = async (req, res) => {
       razorpayOrderId: order.id,
       tripId: `${tripId}`,
       paymentStatus: "created", // pending until confirmed
+      mode, // "live" | "test" — isolates sandbox bookings from real revenue
       orderAmount: chargeNow,
       fullTripAmount: calc.total,
       total: chargeNow,
@@ -188,7 +197,8 @@ export const createSecureOrder = async (req, res) => {
       orderId: order.id,
       amount: chargeNow, // rupees (server-decided)
       currency: "INR",
-      key: RAZORPAY_KEY_ID,
+      key: keys.key_id,
+      mode, // client shows a TEST-MODE banner when "test"
       breakdown: { base: calc.base, discount: calc.discount, gst: calc.gst, total: calc.total, chargeNow, paymentType: finalType },
     });
   } catch (error) {
@@ -203,25 +213,31 @@ export const confirmBooking = async (req, res) => {
   try {
     const userId = req.user?._id;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
-    if (!RAZORPAY_KEY_SECRET) return res.status(500).json({ error: "Razorpay credentials not configured" });
 
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature, travellers, emergencyContact, dietary, roomType } = req.body || {};
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
       return res.status(400).json({ error: "Missing payment verification fields" });
     }
 
+    // Load the booking first so we verify with the SAME key mode its order was
+    // created in (live bookings → live secret; test-sandbox bookings → test
+    // secret). This also means confirm only ever acts on an order the server
+    // already created — it can never start a new payment.
+    const booking = await Bookings.findOne({ razorpayOrderId: razorpay_order_id });
+    if (!booking) return res.status(404).json({ error: "Order not found" });
+    if (`${booking.userId}` !== `${userId}`) return res.status(403).json({ error: "Forbidden" });
+
+    const secret = secretForMode(booking.mode);
+    if (!secret) return res.status(500).json({ error: "Razorpay credentials not configured" });
+
     // Verify the tamper-proof signature.
     const expected = crypto
-      .createHmac("sha256", RAZORPAY_KEY_SECRET)
+      .createHmac("sha256", secret)
       .update(`${razorpay_order_id}|${razorpay_payment_id}`)
       .digest("hex");
     const ok = expected.length === `${razorpay_signature}`.length &&
       crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(`${razorpay_signature}`));
     if (!ok) return res.status(400).json({ error: "Payment signature verification failed" });
-
-    const booking = await Bookings.findOne({ razorpayOrderId: razorpay_order_id });
-    if (!booking) return res.status(404).json({ error: "Order not found" });
-    if (`${booking.userId}` !== `${userId}`) return res.status(403).json({ error: "Forbidden" });
 
     // Idempotency: if already confirmed, just return it (no double seat decrement).
     if (booking.paymentStatus && booking.paymentStatus !== "created") {
@@ -376,12 +392,20 @@ export const createBalanceOrder = async (req, res) => {
     const remaining = fullTotal - paid;
     if (remaining <= 0) return res.status(400).json({ error: "No balance due on this booking" });
 
-    const razorpay = new Razorpay({ key_id: RAZORPAY_KEY_ID, key_secret: RAZORPAY_KEY_SECRET });
+    // A balance top-up reuses the SAME Razorpay mode its parent booking was
+    // created in (so signatures verify with the matching secret). The gate above
+    // already authorised that a payment may start at all.
+    const mode = booking.mode === "test" ? "test" : "live";
+    const keys = keysForMode(mode);
+    if (!keys.key_id || !keys.key_secret) {
+      return res.status(500).json({ error: "Razorpay credentials not configured" });
+    }
+    const razorpay = new Razorpay({ key_id: keys.key_id, key_secret: keys.key_secret });
     const order = await razorpay.orders.create({
       amount: remaining * 100, // paise
       currency: "INR",
       receipt: `bal_${Date.now()}`, // <= 40 chars
-      notes: { bookingId: `${booking._id}`, userId: `${userId}` },
+      notes: { bookingId: `${booking._id}`, userId: `${userId}`, mode },
     });
     if (!order?.id) return res.status(502).json({ error: "Could not create payment order" });
 
@@ -393,7 +417,8 @@ export const createBalanceOrder = async (req, res) => {
       orderId: order.id,
       amount: remaining, // rupees (server-decided)
       currency: "INR",
-      key: RAZORPAY_KEY_ID,
+      key: keys.key_id,
+      mode,
       breakdown: { fullTotal, paid, remaining },
     });
   } catch (error) {
@@ -408,24 +433,27 @@ export const confirmBalancePayment = async (req, res) => {
   try {
     const userId = req.user?._id;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
-    if (!RAZORPAY_KEY_SECRET) return res.status(500).json({ error: "Razorpay credentials not configured" });
 
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body || {};
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
       return res.status(400).json({ error: "Missing payment verification fields" });
     }
 
+    // Load first, then verify with the booking's own mode secret (see confirmBooking).
+    const booking = await Bookings.findOne({ balanceOrderId: razorpay_order_id });
+    if (!booking) return res.status(404).json({ error: "Order not found" });
+    if (`${booking.userId}` !== `${userId}`) return res.status(403).json({ error: "Forbidden" });
+
+    const secret = secretForMode(booking.mode);
+    if (!secret) return res.status(500).json({ error: "Razorpay credentials not configured" });
+
     const expected = crypto
-      .createHmac("sha256", RAZORPAY_KEY_SECRET)
+      .createHmac("sha256", secret)
       .update(`${razorpay_order_id}|${razorpay_payment_id}`)
       .digest("hex");
     const okSig = expected.length === `${razorpay_signature}`.length &&
       crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(`${razorpay_signature}`));
     if (!okSig) return res.status(400).json({ error: "Payment signature verification failed" });
-
-    const booking = await Bookings.findOne({ balanceOrderId: razorpay_order_id });
-    if (!booking) return res.status(404).json({ error: "Order not found" });
-    if (`${booking.userId}` !== `${userId}`) return res.status(403).json({ error: "Forbidden" });
 
     // Idempotency: already settled → return as-is, no double credit.
     if (booking.paymentStatus === "fullPayment") {
@@ -512,13 +540,16 @@ export const confirmBalancePayment = async (req, res) => {
 export const order = async (req, res) => {
   try {
     // Validate Razorpay credentials
-    if (!RAZORPAY_KEY_ID || !RAZORPAY_KEY_SECRET) {
+    // Keys come from paymentGate (live, or isolated test for the authorized
+    // account). Gate already blocked this route if a payment may not start.
+    const keys = rzpKeysFor(req);
+    if (!keys.key_id || !keys.key_secret) {
       throw new CustomError("Razorpay credentials not configured", 500);
     }
 
     const razorpay = new Razorpay({
-      key_id: RAZORPAY_KEY_ID,
-      key_secret: RAZORPAY_KEY_SECRET,
+      key_id: keys.key_id,
+      key_secret: keys.key_secret,
     });
 
     if (!req.body) {
