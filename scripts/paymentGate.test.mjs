@@ -32,7 +32,7 @@ console.log("Authorized test identity:");
 ok("wrong email is rejected", isAuthorizedTestUser({ email: "someone@else.com", isVerified: true }) === false);
 ok("right email but UNVERIFIED is rejected", isAuthorizedTestUser({ email: AUTHORIZED_TEST_EMAIL, isVerified: false }) === false);
 ok("right email, verified, is accepted", isAuthorizedTestUser({ email: AUTHORIZED_TEST_EMAIL, isVerified: true }) === true);
-ok("email is normalised (case + spaces)", isAuthorizedTestUser({ email: " HM101094@Gmail.com ", isVerified: true }) === true);
+ok("email is normalised (case + spaces)", isAuthorizedTestUser({ email: `  ${AUTHORIZED_TEST_EMAIL.toUpperCase()}  `, isVerified: true }) === true);
 ok("no user is rejected", isAuthorizedTestUser(undefined) === false);
 ok("email in body only (no isVerified) is rejected", isAuthorizedTestUser({ email: AUTHORIZED_TEST_EMAIL }) === false);
 

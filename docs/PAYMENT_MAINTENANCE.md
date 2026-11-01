@@ -28,7 +28,7 @@ Gated (order creation): `POST /api/createSecureOrder`, `/api/createBalanceOrder`
 ## New environment variables (all optional; absence = safe defaults)
 | Var | Purpose |
 |---|---|
-| `AUTHORIZED_TEST_EMAIL` | Authorized sandbox identity. Defaults to `hm101094@gmail.com`. |
+| `AUTHORIZED_TEST_EMAIL` | Authorized sandbox identity. Defaults to `hmtenten94@gmail.com`. |
 | `PAYMENTS_TEST_MODE_ENABLED` | `"true"` only in an **isolated/staging** env to enable the test sandbox path. Leave UNSET in production. |
 | `RAZORPAY_TEST_KEY_ID` / `RAZORPAY_TEST_KEY_SECRET` | Razorpay **test** credentials. Used only when the sandbox is enabled; never falls back to live. |
 

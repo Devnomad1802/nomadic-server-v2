@@ -16,8 +16,9 @@ import { PaymentSettings } from "../models/index.js";
  */
 
 // The single authorized test identity (server-verified, see isAuthorizedTestUser).
+// Owner-specified; overridable per-environment via AUTHORIZED_TEST_EMAIL.
 export const AUTHORIZED_TEST_EMAIL = (
-  process.env.AUTHORIZED_TEST_EMAIL || "hm101094@gmail.com"
+  process.env.AUTHORIZED_TEST_EMAIL || "hmtenten94@gmail.com"
 ).trim().toLowerCase();
 
 // Short in-process cache so the hot payment path doesn't hit Mongo every call,

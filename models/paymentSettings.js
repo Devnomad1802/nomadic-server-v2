@@ -37,10 +37,10 @@ const paymentSettingsSchema = new mongoose.Schema(
     // enabled after verified live integration.
     paymentMaintenance: { type: Boolean, default: true },
 
-    // Verified official WhatsApp business number in E.164 (e.g. "+9198...").
-    // Empty until an admin sets a validated number; the client shows a safe
-    // fallback while empty rather than a broken link.
-    whatsappNumber: { type: String, default: "" },
+    // Verified official WhatsApp business number in E.164. Seeded with the
+    // owner-provided number on first run; admin-editable in Settings → Payments.
+    // If ever cleared, the client shows a safe fallback instead of a broken link.
+    whatsappNumber: { type: String, default: "+918623929751" },
 
     // Customer-facing copy (escaped/sanitised on input). Safe defaults below.
     noticeHeading: { type: String, default: "Online payments are temporarily unavailable" },
