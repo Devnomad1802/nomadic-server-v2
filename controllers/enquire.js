@@ -1,6 +1,75 @@
+import crypto from "crypto";
 import { Enquire } from "../models/index.js";
 import { uploadFiles } from "../middlewares/index.js";
 import moment from "moment";
+
+// ── Booking-enquiry fallback (Phase B) ──
+// Hardened, public endpoint for the checkout fallback: server-validated,
+// deduped, persisted with status "new" BEFORE success is returned, admin-
+// visible via the existing enquiries list. Rate-limited at the route.
+const clean = (v, max) => `${v ?? ""}`.replace(/[\u0000-\u001F\u007F]/g, " ").trim().slice(0, max);
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Pure: validate + normalise a booking-enquiry body. Returns { error } or { data }.
+export const validateBookingEnquiry = (body = {}) => {
+  const name = clean(body.Name, 80);
+  const email = clean(body.Email, 120).toLowerCase();
+  const phone = clean(body.Phone, 20);
+  const message = clean(body.Message, 1000);
+  const tripId = clean(body.tripId, 64);
+  const tripName = clean(body.tripName, 160);
+  const batchInfo = clean(body.batchInfo, 80);
+  const partySize = Math.max(0, Math.min(99, parseInt(body.partySize, 10) || 0)) || undefined;
+
+  if (name.length < 2) return { error: "Please enter your name." };
+  if (!email && !phone) return { error: "Please provide an email or phone number." };
+  if (email && !EMAIL_RE.test(email)) return { error: "Please enter a valid email." };
+  if (phone && phone.replace(/\D/g, "").length < 7) return { error: "Please enter a valid phone number." };
+  if (message.length < 3) return { error: "Please add a short message." };
+
+  return { data: { name, email, phone, message, tripId, tripName, batchInfo, partySize } };
+};
+
+// Pure: stable dedupe hash for (contact|trip|message).
+export const dedupeKeyFor = ({ email, phone, tripId, message }) =>
+  crypto.createHash("sha1").update(`${email || phone}|${tripId}|${message}`).digest("hex").slice(0, 24);
+
+export const createBookingEnquiry = async (req, res) => {
+  try {
+    const v = validateBookingEnquiry(req.body);
+    if (v.error) return res.status(400).json({ error: v.error });
+    const { name, email, phone, message, tripId, tripName, batchInfo, partySize } = v.data;
+
+    // Dedupe accidental double-submits: same contact + trip + message within 10 min.
+    const dedupeKey = dedupeKeyFor({ email, phone, tripId, message });
+    const since = new Date(Date.now() - 10 * 60 * 1000);
+    const existing = await Enquire.findOne({ dedupeKey, Date: { $gte: since } });
+    if (existing) {
+      return res.status(200).json({ ok: true, deduped: true, id: `${existing._id}` });
+    }
+
+    const doc = new Enquire({
+      Name: name,
+      Email: email || undefined,
+      Phone: phone || undefined,
+      Message: message,
+      tripId: tripId || undefined,
+      tripName: tripName || undefined,
+      batchInfo: batchInfo || undefined,
+      partySize,
+      source: "booking_fallback",
+      status: "new",
+      dedupeKey,
+      Date: new Date(),
+      chat: [{ Message: message, MessageBy: "User", Date: new Date() }],
+    });
+    await doc.save(); // success is reported ONLY after durable persistence
+    return res.status(201).json({ ok: true, id: `${doc._id}` });
+  } catch (error) {
+    console.error("createBookingEnquiry error:", error?.message || error);
+    return res.status(500).json({ error: "Could not submit your enquiry. Please try again." });
+  }
+};
 
 export const initateEnquery = async (req, res) => {
   try {

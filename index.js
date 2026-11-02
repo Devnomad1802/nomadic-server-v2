@@ -72,8 +72,11 @@ app.use("/uploads", express.static("uploads"));
 // ── Rate limiters on sensitive endpoints ──
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: true, legacyHeaders: false });
 const orderLimiter = rateLimit({ windowMs: 10 * 60 * 1000, limit: 40, standardHeaders: true, legacyHeaders: false });
+// Booking-enquiry fallback: cap per IP to curb spam without blocking real users.
+const enquiryLimiter = rateLimit({ windowMs: 10 * 60 * 1000, limit: 8, standardHeaders: true, legacyHeaders: false });
 app.use("/api/auth", authLimiter);
 app.use(["/api/order", "/api/validate"], orderLimiter);
+app.use("/api/booking-enquiry", enquiryLimiter);
 
 //---------------- API ROUTES --------------------
 app.use("/api/auth", authRoutes);
