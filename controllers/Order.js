@@ -207,6 +207,117 @@ export const createSecureOrder = async (req, res) => {
   }
 };
 
+// Finalize a PAID booking exactly once: decrement seats, mark paid, backfill
+// contact, assign invoice, send email. Idempotent — a second call (e.g. confirm
+// AND reconcile both firing) is a no-op. Shared by confirmBooking + reconcile so
+// the two paths can never diverge. Caller is responsible for having VERIFIED the
+// payment (signature or an authoritative Razorpay fetch) before calling.
+export const finalizeBookingPaid = async (booking, opts = {}) => {
+  const { paymentId, travellers, emergencyContact, dietary, roomType } = opts;
+
+  // Idempotency: already finalized → return as-is, no double seat decrement.
+  if (booking.paymentStatus && booking.paymentStatus !== "created") return booking;
+
+  // Decrement seats on the chosen batch (best-effort, never below zero).
+  try {
+    const trip = await Trips.findById(booking.tripId);
+    if (trip) {
+      const seats = JSON.parse(trip.numberOfSeats || "[]");
+      const idx = Number(booking.batchIndex) || 0;
+      const avail = parseInt(seats?.[idx]?.batchSeats, 10) || 0;
+      const need = Number(booking.travellersCount) || 1;
+      if (seats?.[idx]) {
+        seats[idx].batchSeats = `${Math.max(0, avail - need)}`;
+        trip.numberOfSeats = JSON.stringify(seats);
+        await trip.save();
+      }
+      if (avail < need) booking.status = "SEATS_OVERBOOKED"; // flag for ops; payment already taken
+    }
+  } catch (e) {
+    console.error("seat decrement failed:", e?.message || e);
+  }
+
+  // Mark PAID with the SERVER amount (never the client's).
+  booking.paymentStatus = booking.paymentType === "firstPayment" ? "firstPayment" : "fullPayment";
+  if (paymentId) booking.razorpayPaymentId = paymentId;
+  if (Array.isArray(travellers)) booking.travellers = travellers;
+  if (emergencyContact) booking.emergencyContact = emergencyContact;
+  if (dietary !== undefined) booking.dietary = dietary;
+  if (roomType !== undefined) booking.roomType = roomType;
+  booking.DateOfBooking = new Date();
+
+  // Backfill the top-level contact fields the Admin list/search/detail read.
+  try {
+    const lead = Array.isArray(booking.travellers)
+      ? booking.travellers.find((t) => t?.isLead) || booking.travellers[0]
+      : null;
+    let acct = null;
+    if ((!lead || !lead.email || !lead.name || !lead.phone) && booking.userId) {
+      acct = await User.findById(booking.userId).select("name email phone");
+    }
+    booking.userName = booking.userName || lead?.name || acct?.name || "";
+    booking.email = booking.email || lead?.email || acct?.email || "";
+    booking.phone = booking.phone || lead?.phone || acct?.phone || "";
+  } catch (e) {
+    console.error("booking contact backfill failed:", e?.message || e);
+  }
+
+  // Invoice number: assigned exactly once, only after a VERIFIED payment.
+  if (!booking.invoiceNumber) {
+    try {
+      const { nextInvoiceNumber } = await import("../utils/invoiceNumber.js");
+      booking.invoiceNumber = await nextInvoiceNumber();
+      booking.invoiceDate = new Date();
+    } catch (invErr) {
+      console.error("invoice number assignment failed:", invErr?.message || invErr);
+    }
+  }
+  await booking.save();
+
+  // Confirmation email (best-effort — never blocks or breaks the flow).
+  try {
+    const { sendBookingConfirmationEmail, SUPPORT_EMAIL } = await import("../services/bookingEmailService.js");
+    const tripDoc = await Trips.findById(booking.tripId).populate("host").lean();
+    const lead = Array.isArray(booking.travellers)
+      ? booking.travellers.find((t) => t?.isLead) || booking.travellers[0]
+      : null;
+    const buyer = await User.findById(booking.userId).select("name email").lean();
+    const recipient = lead?.email || booking.email || buyer?.email;
+    const paidNow = Number(booking.orderAmount) || 0;
+    const fullAmt = Number(booking.fullTripAmount) || 0;
+    const remaining = booking.paymentType === "firstPayment" ? Math.max(0, fullAmt - paidNow) : 0;
+    let balanceDue = "";
+    try {
+      const cdSnap = JSON.parse(booking.cardData || "{}");
+      const dep = cdSnap?.cardDate?.batchDate || booking.batchDate;
+      if (remaining > 0) balanceDue = fmtBalanceDueDate(dep);
+    } catch { /* noop */ }
+    await sendBookingConfirmationEmail(recipient, {
+      customer_name: lead?.name || booking.userName || buyer?.name || "",
+      booking_id: booking.bookingId || String(booking._id),
+      trip_name: tripDoc?.title || "",
+      host_name: tripDoc?.host?.hostTitle || tripDoc?.host?.hostName || "",
+      batch_date: booking.batchDate || "",
+      traveller_count: booking.travellersCount || (Array.isArray(booking.travellers) ? booking.travellers.length : 1),
+      booking_date: booking.DateOfBooking
+        ? new Date(booking.DateOfBooking).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+        : "",
+      booking_status: remaining > 0 ? "Confirmed (deposit paid)" : "Confirmed",
+      amount_paid: paidNow,
+      remaining_amount: remaining,
+      balance_due_date: balanceDue,
+      payment_status: booking.paymentType === "firstPayment" ? "Partially paid" : "Fully paid",
+      transaction_id: booking.razorpayPaymentId || "",
+      support_email: SUPPORT_EMAIL,
+      view_booking_url: `${process.env.CLIENT_URL || "https://nomadictownies.com"}/profile`,
+    }, await invoiceAttachment(booking, buyer));
+  } catch (mailErr) {
+    console.error("booking confirmation email error:", mailErr?.message || mailErr);
+  }
+
+  return booking;
+};
+
 // Step 2 — verify Razorpay's signature, then mark PAID + decrement seats, once.
 // Browser sends only the 3 receipt codes; it cannot lie about price or status.
 export const confirmBooking = async (req, res) => {
@@ -239,115 +350,14 @@ export const confirmBooking = async (req, res) => {
       crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(`${razorpay_signature}`));
     if (!ok) return res.status(400).json({ error: "Payment signature verification failed" });
 
-    // Idempotency: if already confirmed, just return it (no double seat decrement).
+    // Idempotency: already finalized → return it (no double seat decrement).
     if (booking.paymentStatus && booking.paymentStatus !== "created") {
       return res.status(200).json({ message: "Already confirmed", data: booking });
     }
 
-    // Decrement seats on the chosen batch (best-effort, never below zero).
-    try {
-      const trip = await Trips.findById(booking.tripId);
-      if (trip) {
-        const seats = JSON.parse(trip.numberOfSeats || "[]");
-        const idx = Number(booking.batchIndex) || 0;
-        const avail = parseInt(seats?.[idx]?.batchSeats, 10) || 0;
-        const need = Number(booking.travellersCount) || 1;
-        if (seats?.[idx]) {
-          seats[idx].batchSeats = `${Math.max(0, avail - need)}`;
-          trip.numberOfSeats = JSON.stringify(seats);
-          await trip.save();
-        }
-        if (avail < need) booking.status = "SEATS_OVERBOOKED"; // flag for ops; payment already taken
-      }
-    } catch (e) {
-      console.error("seat decrement failed:", e?.message || e);
-    }
-
-    // Mark PAID with the SERVER amount (never the client's).
-    booking.paymentStatus = booking.paymentType === "firstPayment" ? "firstPayment" : "fullPayment";
-    booking.razorpayPaymentId = razorpay_payment_id;
-    if (Array.isArray(travellers)) booking.travellers = travellers;
-    if (emergencyContact) booking.emergencyContact = emergencyContact;
-    if (dietary !== undefined) booking.dietary = dietary;
-    if (roomType !== undefined) booking.roomType = roomType;
-    booking.DateOfBooking = new Date();
-
-    // Populate the top-level contact fields the Admin bookings list, search, and
-    // detail view read (userName/email/phone). The secure flow only stored the
-    // travellers array, leaving these blank so new bookings showed no details.
-    // Source them from the lead traveller, falling back to the account user.
-    try {
-      const lead = Array.isArray(booking.travellers)
-        ? booking.travellers.find((t) => t?.isLead) || booking.travellers[0]
-        : null;
-      let acct = null;
-      if ((!lead || !lead.email || !lead.name || !lead.phone) && booking.userId) {
-        acct = await User.findById(booking.userId).select("name email phone");
-      }
-      booking.userName = booking.userName || lead?.name || acct?.name || "";
-      booking.email = booking.email || lead?.email || acct?.email || "";
-      booking.phone = booking.phone || lead?.phone || acct?.phone || "";
-    } catch (e) {
-      console.error("booking contact backfill failed:", e?.message || e);
-    }
-
-    // Invoice number: assigned exactly once, only after a VERIFIED payment.
-    if (!booking.invoiceNumber) {
-      try {
-        const { nextInvoiceNumber } = await import("../utils/invoiceNumber.js");
-        booking.invoiceNumber = await nextInvoiceNumber();
-        booking.invoiceDate = new Date();
-      } catch (invErr) {
-        console.error("invoice number assignment failed:", invErr?.message || invErr);
-      }
-    }
-    await booking.save();
-
-    // Send the booking confirmation email (best-effort — never blocks the
-    // response or breaks the booking/payment flow).
-    try {
-      const { sendBookingConfirmationEmail, SUPPORT_EMAIL } = await import("../services/bookingEmailService.js");
-      const tripDoc = await Trips.findById(booking.tripId).populate("host").lean();
-      const lead = Array.isArray(booking.travellers)
-        ? booking.travellers.find((t) => t?.isLead) || booking.travellers[0]
-        : null;
-      // The secure confirm flow doesn't post traveller details and the booking
-      // has no stored email, so fall back to the buyer's account email — this is
-      // why confirmations were never delivered.
-      const buyer = await User.findById(booking.userId).select("name email").lean();
-      const recipient = lead?.email || booking.email || buyer?.email;
-      const paidNow = Number(booking.orderAmount) || 0;
-      const fullAmt = Number(booking.fullTripAmount) || 0;
-      const remaining = booking.paymentType === "firstPayment" ? Math.max(0, fullAmt - paidNow) : 0;
-      // Platform rule: balance is due 15 days before the trip departs.
-      let balanceDue = "";
-      try {
-        const cdSnap = JSON.parse(booking.cardData || "{}");
-        const dep = cdSnap?.cardDate?.batchDate || booking.batchDate;
-        if (remaining > 0) balanceDue = fmtBalanceDueDate(dep);
-      } catch { /* noop */ }
-      await sendBookingConfirmationEmail(recipient, {
-        customer_name: lead?.name || booking.userName || buyer?.name || "",
-        booking_id: booking.bookingId || String(booking._id),
-        trip_name: tripDoc?.title || "",
-        host_name: tripDoc?.host?.hostTitle || tripDoc?.host?.hostName || "",
-        batch_date: booking.batchDate || "",
-        traveller_count: booking.travellersCount || (Array.isArray(booking.travellers) ? booking.travellers.length : 1),
-        booking_date: booking.DateOfBooking
-          ? new Date(booking.DateOfBooking).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
-          : "",
-        booking_status: remaining > 0 ? "Confirmed (deposit paid)" : "Confirmed",
-        amount_paid: paidNow,
-        remaining_amount: remaining,
-        balance_due_date: balanceDue,
-        payment_status: booking.paymentType === "firstPayment" ? "Partially paid" : "Fully paid",
-        transaction_id: booking.razorpayPaymentId || "",
-        support_email: SUPPORT_EMAIL,
-        view_booking_url: `${process.env.CLIENT_URL || "https://nomadictownies.com"}/profile`,
-      }, await invoiceAttachment(booking, buyer));
-    } catch (mailErr) {
-      console.error("booking confirmation email error:", mailErr?.message || mailErr);
-    }
+    await finalizeBookingPaid(booking, {
+      paymentId: razorpay_payment_id, travellers, emergencyContact, dietary, roomType,
+    });
 
     return res.status(200).json({ message: "Booking confirmed", data: booking });
   } catch (error) {
@@ -649,5 +659,83 @@ export const downloadInvoice = async (req, res) => {
   } catch (e) {
     console.error("downloadInvoice error:", e?.message || e);
     return res.status(500).json({ error: "Could not generate invoice" });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────
+// A1 — Reconciliation (fail-safe for lost/slow payment callbacks)
+// Query Razorpay's AUTHORITATIVE state for an order so a dropped client
+// callback never loses a paid booking or shows a false failure.
+// ─────────────────────────────────────────────────────────────
+
+// Pure: map an order's Razorpay payments to a settlement state.
+// CAPTURED = money taken (finalize). FAILED = all attempts failed, none taken.
+// PENDING = created/authorized but not captured yet (retry/reconcile later).
+export const mapPaymentsToState = (payments = []) => {
+  const list = Array.isArray(payments) ? payments : [];
+  const captured = list.find((p) => p?.status === "captured");
+  if (captured) return { state: "CAPTURED", payment: captured };
+  const authorized = list.find((p) => p?.status === "authorized");
+  if (authorized) return { state: "PENDING", payment: authorized }; // held, not yet captured
+  if (list.length > 0 && list.every((p) => p?.status === "failed")) {
+    return { state: "FAILED", payment: list[list.length - 1] };
+  }
+  return { state: "PENDING", payment: null };
+};
+
+// GET /api/payment/reconcile/:orderId — auth, owner-only. Returns one of
+// PAYMENT_CONFIRMED | PAYMENT_FAILED | PAYMENT_PENDING | STATUS_UNKNOWN.
+// Never fabricates a failure; on Razorpay-unreachable returns STATUS_UNKNOWN.
+export const reconcilePayment = async (req, res) => {
+  try {
+    const userId = req.user?._id;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    const { orderId } = req.params || {};
+    if (!orderId) return res.status(400).json({ error: "orderId is required" });
+
+    const booking = await Bookings.findOne({
+      $or: [{ razorpayOrderId: orderId }, { balanceOrderId: orderId }],
+    });
+    if (!booking) return res.status(404).json({ error: "Order not found" });
+    if (`${booking.userId}` !== `${userId}`) return res.status(403).json({ error: "Forbidden" });
+
+    // Already finalized (confirm callback or an earlier reconcile won the race).
+    if (booking.paymentStatus && booking.paymentStatus !== "created") {
+      return res.status(200).json({ state: "PAYMENT_CONFIRMED", bookingId: `${booking._id}`, data: booking });
+    }
+
+    // Phase A reconciles the MAIN booking order only; a balance top-up uses its
+    // own confirm path.
+    const isMainOrder = booking.razorpayOrderId === orderId;
+
+    const keys = keysForMode(booking.mode);
+    if (!keys.key_id || !keys.key_secret) {
+      return res.status(200).json({ state: "STATUS_UNKNOWN", reason: "credentials_unavailable" });
+    }
+
+    let payments = [];
+    try {
+      const rzp = new Razorpay({ key_id: keys.key_id, key_secret: keys.key_secret });
+      const resp = await rzp.orders.fetchPayments(orderId);
+      payments = Array.isArray(resp?.items) ? resp.items : [];
+    } catch (e) {
+      console.error("reconcile fetchPayments failed:", e?.message || e);
+      return res.status(200).json({ state: "STATUS_UNKNOWN", reason: "provider_unreachable" });
+    }
+
+    const { state, payment } = mapPaymentsToState(payments);
+    if (state === "CAPTURED" && isMainOrder) {
+      await finalizeBookingPaid(booking, { paymentId: payment?.id });
+      return res.status(200).json({ state: "PAYMENT_CONFIRMED", bookingId: `${booking._id}`, data: booking });
+    }
+    if (state === "CAPTURED") {
+      // Balance order captured — leave for the balance confirm path; report paid.
+      return res.status(200).json({ state: "PAYMENT_CONFIRMED", bookingId: `${booking._id}` });
+    }
+    if (state === "FAILED") return res.status(200).json({ state: "PAYMENT_FAILED" });
+    return res.status(200).json({ state: "PAYMENT_PENDING", bookingId: `${booking._id}` });
+  } catch (error) {
+    console.error("reconcilePayment error:", error?.message || error);
+    return res.status(200).json({ state: "STATUS_UNKNOWN", reason: "server_error" });
   }
 };
