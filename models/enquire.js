@@ -12,6 +12,15 @@ const userSchema = mongoose.Schema({
   tripId: { type: String, required: false },
   hostId: { type: String, required: false },
   status: { type: String, required: false },
+  // ── Booking-enquiry fallback (Phase B) ──
+  // Set when an enquiry comes from the checkout fallback. Non-sensitive context
+  // only (trip name/batch/party size) — never PII beyond contact, no payment data.
+  source: { type: String, required: false },     // e.g. "booking_fallback"
+  tripName: { type: String, required: false },
+  batchInfo: { type: String, required: false },   // human-readable dates
+  partySize: { type: Number, required: false },
+  // Short hash of (contact|trip|message) to collapse accidental double-submits.
+  dedupeKey: { type: String, required: false, index: true },
   Date: { type: Date, required: false },
   // ── Platform chat (host <-> traveller) ──
   // Unread counters per side + contact-sharing moderation state.

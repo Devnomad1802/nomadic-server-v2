@@ -1,0 +1,16 @@
+import assert from "node:assert";
+import { validateBookingEnquiry, dedupeKeyFor } from "../controllers/enquire.js";
+let pass = 0; const ok=(n,c)=>{assert.ok(c,n);console.log("  ✓",n);pass++;};
+ok("no name -> error", !!validateBookingEnquiry({ Email:"a@b.com", Message:"hi there" }).error);
+ok("no contact -> error", !!validateBookingEnquiry({ Name:"Ann", Message:"hi there" }).error);
+ok("bad email -> error", !!validateBookingEnquiry({ Name:"Ann", Email:"nope", Message:"hi there" }).error);
+ok("short message -> error", !!validateBookingEnquiry({ Name:"Ann", Email:"a@b.com", Message:"x" }).error);
+ok("phone only ok", !!validateBookingEnquiry({ Name:"Ann", Phone:"9812345678", Message:"help me" }).data);
+ok("valid -> data normalised email", validateBookingEnquiry({ Name:"Ann", Email:"A@B.Com", Message:"help me" }).data.email === "a@b.com");
+ok("partySize clamped", validateBookingEnquiry({ Name:"Ann", Email:"a@b.com", Message:"help me", partySize:"500" }).data.partySize === 99);
+const k1 = dedupeKeyFor({ email:"a@b.com", tripId:"t1", message:"m" });
+const k2 = dedupeKeyFor({ email:"a@b.com", tripId:"t1", message:"m" });
+const k3 = dedupeKeyFor({ email:"a@b.com", tripId:"t2", message:"m" });
+ok("dedupe stable for same input", k1===k2);
+ok("dedupe differs by trip", k1!==k3);
+console.log(`\nAll ${pass} checks passed.`);
