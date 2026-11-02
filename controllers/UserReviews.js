@@ -1,6 +1,15 @@
 import { UserReviews } from "../models/index.js";
 import { deleteMultipleFromS3 } from "../middlewares/index.js";
 
+// Mongo filter for the reviews that may appear on ONE trip's page: this exact
+// tripId, visible only (never pending/rejected), and never a host-scoped review.
+// Pure + exported so the isolation rule is testable and used by find + count.
+export const visibleTripReviewFilter = (tripId) => ({
+    tripId,
+    status: { $nin: ["pending", "rejected"] },
+    entityType: { $ne: "host" }, // allows "trip" and legacy undefined; excludes host
+});
+
 // ------------------------- add user review -------------------------
 export const addUserReview = async (req, res) => {
     try {
@@ -254,14 +263,18 @@ export const getuserReviewsByTripId = async (req, res) => {
         const limit = parseInt(req.query.limit) || 20;
         const skip = (page - 1) * limit;
 
-        // Get all reviews for the trip with optional pagination, sorted by date (newest first)
-        const reviews = await UserReviews.find({ tripId, status: { $nin: ["pending", "rejected"] } })
+        // Strict trip-only isolation: this exact tripId, visible (approved/legacy,
+        // never pending/rejected), and NEVER a host-scoped review. A trip page
+        // must never show another trip's or a host-wide review.
+        const filter = visibleTripReviewFilter(tripId);
+
+        const reviews = await UserReviews.find(filter)
             .sort({ date: -1 })
             .skip(skip)
             .limit(limit);
 
-        // Get total count for pagination
-        const totalReviews = await UserReviews.countDocuments({ tripId });
+        // Count uses the SAME filter so totals/pagination match what's shown.
+        const totalReviews = await UserReviews.countDocuments(filter);
 
         return res.status(200).json({
             success: true,
