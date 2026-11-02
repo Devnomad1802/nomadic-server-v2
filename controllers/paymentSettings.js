@@ -2,6 +2,7 @@ import {
   getPaymentSettings,
   invalidatePaymentSettingsCache,
   buildDiagnostics,
+  resolvePaymentDecision,
 } from "../services/paymentAvailability.js";
 
 // E.164: '+' then 8–15 digits, first digit non-zero.
@@ -80,6 +81,18 @@ export const updatePaymentSettings = async (req, res) => {
     noticeBody: s.noticeBody,
     noticeCtaLabel: s.noticeCtaLabel,
     diagnostics: buildDiagnostics(s),
+  });
+};
+
+// GET /api/payment-capability — AUTHENTICATED. Tells the client whether THIS
+// user may start a payment right now, and in which mode, so the authorized test
+// account still sees the real pay button during maintenance. No secrets/keys.
+export const getPaymentCapability = async (req, res) => {
+  const decision = await resolvePaymentDecision(req.user);
+  return res.json({
+    allowed: decision.allowed,
+    mode: decision.mode,       // "live" | "test" | "blocked"
+    reason: decision.reason,
   });
 };
 
