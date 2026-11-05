@@ -255,66 +255,39 @@ export const updateBooking = async (req, res) => {
 export const getAllBookings = async (req, res) => {
   try {
     const search = req.query.search || "";
-    const { status } = req.body || "All";
-    if (status == "" || status == "All") {
-      const page = parseInt(req.query.page) || 1;
-      const limit = parseInt(req.query.limit) || 20;
-      const skip = (page - 1) * limit;
-      const trips = await Bookings.find({
-        $or: [
-          { email: { $regex: search, $options: "i" } },
-          { phone: { $regex: search, $options: "i" } },
-          { userName: { $regex: search, $options: "i" } },
-        ],
-      })
-        .limit(limit)
-        .skip(skip)
-        .sort({ DateOfBooking: -1 });
-      const totalTrips = await Bookings.countDocuments({
-        $or: [
-          { email: { $regex: search, $options: "i" } },
-          { phone: { $regex: search, $options: "i" } },
-          { userName: { $regex: search, $options: "i" } },
-        ],
-      });
-      return res.status(200).json({
-        message: "Trips retrieved successfully",
-        data: trips,
-        currentPage: page,
-        totalPages: Math.ceil(totalTrips / limit),
-        totalTrips,
-      });
-    } else {
-      const page = parseInt(req.query.page) || 1;
-      const limit = parseInt(req.query.limit) || 20;
-      const skip = (page - 1) * limit;
-      const trips = await Bookings.find({
-        status: status,
-        $or: [
-          { email: { $regex: search, $options: "i" } },
-          { phone: { $regex: search, $options: "i" } },
-          { userName: { $regex: search, $options: "i" } },
-        ],
-      })
-        .limit(limit)
-        .skip(skip)
-        .sort({ DateOfBooking: -1 });
-      const totalTrips = await Bookings.countDocuments({
-        status: status,
-        $or: [
-          { email: { $regex: search, $options: "i" } },
-          { phone: { $regex: search, $options: "i" } },
-          { userName: { $regex: search, $options: "i" } },
-        ],
-      });
-      return res.status(200).json({
-        message: "Trips retrieved successfully",
-        data: trips,
-        currentPage: page,
-        totalPages: Math.ceil(totalTrips / limit),
-        totalTrips,
-      });
+    const { status } = req.body || {};
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+
+    // Build the filter. A status other than "All" narrows by status. The
+    // email/phone/userName search is applied ONLY when a search term exists —
+    // an empty $regex does NOT match docs missing those fields, which was
+    // silently hiding every booking without a stored contact (unpaid / secure
+    // -flow before confirm backfill) from both the list and analytics.
+    const filter = {};
+    if (status && status !== "All") filter.status = status;
+    if (search) {
+      filter.$or = [
+        { email: { $regex: search, $options: "i" } },
+        { phone: { $regex: search, $options: "i" } },
+        { userName: { $regex: search, $options: "i" } },
+      ];
     }
+
+    const trips = await Bookings.find(filter)
+      .limit(limit)
+      .skip(skip)
+      .sort({ DateOfBooking: -1 });
+    const totalTrips = await Bookings.countDocuments(filter);
+
+    return res.status(200).json({
+      message: "Trips retrieved successfully",
+      data: trips,
+      currentPage: page,
+      totalPages: Math.ceil(totalTrips / limit),
+      totalTrips,
+    });
   } catch (error) {
     console.error("Error retrieving trips:", error);
     return res.status(500).json({ error: "Internal server error" });
