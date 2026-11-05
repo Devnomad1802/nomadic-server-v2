@@ -44,9 +44,21 @@ const dayKey = (d) => {
   return dt.toISOString().slice(0, 10); // YYYY-MM-DD
 };
 
+// A booking counts toward revenue/KPIs only if it was actually PAID (full or
+// partial advance) and is NOT a test-sandbox booking. "created" (unpaid /
+// abandoned), failed and mode:"test" never count as captured revenue.
+export const isEligibleBooking = (b) =>
+  (b?.paymentStatus === "fullPayment" || b?.paymentStatus === "firstPayment") &&
+  b?.mode !== "test";
+
+// Created-but-unpaid (abandoned checkout), excluding test. Reported separately.
+export const isAbandonedBooking = (b) =>
+  b?.paymentStatus === "created" && b?.mode !== "test";
+
 /**
  * GET /api/analytics/overview?from=ISO&to=ISO
  * Returns KPIs, time series, payments split, top trips, funnel, recent.
+ * Revenue/KPIs count only PAID, non-test bookings (see isEligibleBooking).
  */
 export const getAnalyticsOverview = async (req, res) => {
   try {
@@ -56,16 +68,21 @@ export const getAnalyticsOverview = async (req, res) => {
       ? new Date(req.query.from)
       : new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); // default 30d
 
-    // Bookings in range (by DateOfBooking; fall back to _id timestamp)
+    // In-range bookings (by DateOfBooking; fall back to _id timestamp).
     const allBookings = await Bookings.find().lean();
-    const bookings = allBookings.filter((b) => {
+    const inRange = allBookings.filter((b) => {
       const d = b.DateOfBooking ? new Date(b.DateOfBooking) : b._id.getTimestamp();
       return d >= from && d <= to;
     });
 
+    // Only PAID, non-test bookings drive revenue/KPIs. Abandoned (created/unpaid)
+    // are counted separately, never as revenue.
+    const bookings = inRange.filter(isEligibleBooking);
+    const abandonedCount = inRange.filter(isAbandonedBooking).length;
+
     // KPIs
-    let totalSales = 0;
-    let totalPending = 0;
+    let totalSales = 0;      // captured revenue (advance counts as captured)
+    let totalPending = 0;    // outstanding balance on partial bookings only
     let fullPaidCount = 0;
     let partialCount = 0;
     const tripAgg = {}; // tripId -> { name, bookings, revenue }
@@ -73,12 +90,16 @@ export const getAnalyticsOverview = async (req, res) => {
 
     bookings.forEach((b) => {
       const paid = Number(b.total) || 0;
-      const grand = grandTotal(b);
-      const pending = grand - paid > 0 ? grand - paid : 0;
       totalSales += paid;
-      totalPending += pending;
-      if (pending > 0) partialCount += 1;
-      else fullPaidCount += 1;
+
+      // Partial (firstPayment) carries an outstanding balance; full does not.
+      if (b.paymentStatus === "firstPayment") {
+        const pending = grandTotal(b) - paid;
+        if (pending > 0) { totalPending += pending; partialCount += 1; }
+        else fullPaidCount += 1;
+      } else {
+        fullPaidCount += 1;
+      }
 
       const name = tripName(b);
       const key = b.tripId || name;
@@ -161,6 +182,7 @@ export const getAnalyticsOverview = async (req, res) => {
         totalSales,
         totalPending,
         bookings: bookingsCount,
+        abandoned: abandonedCount, // created/unpaid, excluded from revenue
         newUsers: newUsersCount,
         enquiries: enquiriesCount,
         avgBookingValue,
