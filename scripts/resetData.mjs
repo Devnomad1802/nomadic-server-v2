@@ -10,11 +10,12 @@
 
 import "dotenv/config";
 import { connectDB } from "../database/db.js";
-import { Bookings, User } from "../models/index.js";
+import { Bookings, User, Enquire } from "../models/index.js";
 
 const args = process.argv.slice(2);
 const EXECUTE = args.includes("--execute");
 const HAVE_BACKUP = args.includes("--i-have-backup");
+const INCLUDE_ENQUIRIES = args.includes("--enquiries"); // also delete ALL enquiries
 const TOKEN_OK = process.env.RESET_CONFIRM === "NUKE";
 
 const mask = (e) => (e || "").replace(/^(.{2}).*@/, "$1***@");
@@ -26,6 +27,7 @@ const run = async () => {
 
   const bookingsToDelete = await Bookings.countDocuments({});
   const usersToDelete = await User.countDocuments(customerFilter);
+  const enquiriesToDelete = INCLUDE_ENQUIRIES ? await Enquire.countDocuments({}) : 0;
   const adminKept = await User.countDocuments({ role: "Admin" });
   const hostKept = await User.countDocuments({ role: "Host" });
   const sample = (await User.find(customerFilter).limit(5).lean()).map((u) => mask(u.email));
@@ -34,10 +36,11 @@ const run = async () => {
   console.log("WILL DELETE:");
   console.log("  bookings       :", bookingsToDelete, "(ALL)");
   console.log("  customer users :", usersToDelete, "sample:", sample);
+  console.log("  enquiries      :", INCLUDE_ENQUIRIES ? `${enquiriesToDelete} (ALL)` : "0 (pass --enquiries to include)");
   console.log("WILL KEEP:");
   console.log("  Admin users    :", adminKept);
   console.log("  Host users     :", hostKept);
-  console.log("  enquiries, reviews, trips, hosts, categories, settings: UNTOUCHED");
+  console.log("  reviews, trips, hosts, categories, settings: UNTOUCHED");
 
   // Guards against an accidental over-delete.
   if (bookingsToDelete > 1000 || usersToDelete > 500) {
@@ -65,7 +68,8 @@ const run = async () => {
 
   const b = await Bookings.deleteMany({});
   const u = await User.deleteMany(customerFilter);
-  console.log("\nDELETED → bookings:", b.deletedCount, "| customer users:", u.deletedCount);
+  const e = INCLUDE_ENQUIRIES ? await Enquire.deleteMany({}) : { deletedCount: 0 };
+  console.log("\nDELETED → bookings:", b.deletedCount, "| customer users:", u.deletedCount, "| enquiries:", e.deletedCount);
 
   console.log("POST counts →",
     "bookings:", await Bookings.countDocuments({}),
