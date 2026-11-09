@@ -1,5 +1,6 @@
 import { Trips, Categories, Host } from "../models/index.js";
 import { uploadFilesToS3, deleteMultipleFromS3 } from "../middlewares/index.js";
+import { getAllOccupancy, getBatchOccupancy, buildBatchAvailability } from "../services/seatAvailability.js";
 
 // Helper to clean up any files uploaded during the current request
 const cleanupUploadedFiles = async (req) => {
@@ -587,7 +588,12 @@ export const GetAllTripsForUser = async (req, res) => {
     // $nin also matches docs without a Status field, so legacy/admin trips stay visible.
     const trips = await Trips.find({ enableBooking: true, Status: { $nin: ["pending", "rejected"] } })
       .populate('host', '-bankName -accountNumber -ifscCode -accountHolderName -panNumber -gstNumber -documents -contact_id -fund_account_id -commissionRate')
-      .sort({ date: -1 });
+      .sort({ date: -1 })
+      .lean();
+    // Attach per-batch availability (capacity/occupied/remaining/label) derived
+    // from paid bookings — numberOfSeats stays the fixed capacity.
+    const occ = await getAllOccupancy();
+    trips.forEach((t) => { t.batchAvailability = buildBatchAvailability(t.numberOfSeats, occ[`${t._id}`] || {}); });
     return res
       .status(200)
       .json({ message: "All trips retrieved successfully", data: trips });
@@ -614,7 +620,12 @@ export const GetTripsById = async (req, res) => {
   try {
     const trips = await Trips.find({ _id: req.body._id })
       .populate('host', '-bankName -accountNumber -ifscCode -accountHolderName -panNumber -gstNumber -documents -contact_id -fund_account_id -commissionRate')
-      .sort({ date: -1 });
+      .sort({ date: -1 })
+      .lean();
+    if (trips[0]) {
+      const occ = await getBatchOccupancy(trips[0]._id);
+      trips[0].batchAvailability = buildBatchAvailability(trips[0].numberOfSeats, occ);
+    }
 
     // Lightweight analytics: count detail views (fire-and-forget, response unchanged)
     Trips.updateOne({ _id: req.body._id }, { $inc: { viewCount: 1 } }).catch(() => {});
