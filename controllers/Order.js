@@ -5,6 +5,7 @@ import { BadRequest, CustomError } from "../middlewares/index.js";
 import { Bookings, Trips, User } from "../models/index.js";
 import { isPartialAllowed, fmtBalanceDueDate } from "../utils/partialPayment.js";
 import { secretForMode, keysForMode } from "../services/paymentAvailability.js";
+import { getBatchOccupancy } from "../services/seatAvailability.js";
 
 const { RAZORPAY_KEY_SECRET, RAZORPAY_KEY_ID } = process.env;
 
@@ -98,6 +99,21 @@ export const createSecureOrder = async (req, res) => {
     const calc = computeTripAmount(trip, quantities, couponCode);
     if (calc.total <= 0 || calc.travellers <= 0) {
       return res.status(400).json({ error: "Invalid selection — choose at least one traveller." });
+    }
+
+    // Server-authoritative seat check (client display is not trusted). Capacity
+    // is the configured batch size; occupied is derived from paid bookings.
+    try {
+      const seatsArr = JSON.parse(trip.numberOfSeats || "[]");
+      const bIdx = Number(batchIndex) || 0;
+      const capacity = parseInt(seatsArr?.[bIdx]?.batchSeats, 10) || 0;
+      const occ = await getBatchOccupancy(tripId);
+      const remaining = Math.max(0, capacity - (Number(occ[bIdx]) || 0));
+      if (capacity > 0 && calc.travellers > remaining) {
+        return res.status(409).json({ error: `Only ${remaining} seat(s) left for this batch.`, code: "SEATS_UNAVAILABLE", remaining });
+      }
+    } catch (e) {
+      console.error("seat check failed:", e?.message || e);
     }
 
     // Date snapshot for the success page (mirrors old cardData shape).
@@ -218,23 +234,23 @@ export const finalizeBookingPaid = async (booking, opts = {}) => {
   // Idempotency: already finalized → return as-is, no double seat decrement.
   if (booking.paymentStatus && booking.paymentStatus !== "created") return booking;
 
-  // Decrement seats on the chosen batch (best-effort, never below zero).
+  // Inventory is NO LONGER mutated here: numberOfSeats[].batchSeats is the fixed
+  // CAPACITY. Occupied/remaining are derived from paid bookings (see
+  // services/seatAvailability.js), so a second confirm or duplicate webhook can
+  // never double-decrement. We only FLAG an overbooking for ops (payment already
+  // taken) by comparing occupancy (incl. this booking) against capacity.
   try {
-    const trip = await Trips.findById(booking.tripId);
+    const trip = await Trips.findById(booking.tripId).lean();
     if (trip) {
       const seats = JSON.parse(trip.numberOfSeats || "[]");
       const idx = Number(booking.batchIndex) || 0;
-      const avail = parseInt(seats?.[idx]?.batchSeats, 10) || 0;
-      const need = Number(booking.travellersCount) || 1;
-      if (seats?.[idx]) {
-        seats[idx].batchSeats = `${Math.max(0, avail - need)}`;
-        trip.numberOfSeats = JSON.stringify(seats);
-        await trip.save();
-      }
-      if (avail < need) booking.status = "SEATS_OVERBOOKED"; // flag for ops; payment already taken
+      const capacity = parseInt(seats?.[idx]?.batchSeats, 10) || 0;
+      const occ = await getBatchOccupancy(booking.tripId); // includes bookings already paid
+      const occupiedNow = (Number(occ[idx]) || 0) + (Number(booking.travellersCount) || 1);
+      if (capacity > 0 && occupiedNow > capacity) booking.status = "SEATS_OVERBOOKED";
     }
   } catch (e) {
-    console.error("seat decrement failed:", e?.message || e);
+    console.error("seat occupancy flag failed:", e?.message || e);
   }
 
   // Mark PAID with the SERVER amount (never the client's).
