@@ -112,17 +112,39 @@ export const register = async (req, res) => {
 
 // Get all users
 export const getAllUsers = async (req, res) => {
-  const page = parseInt(req.query.page) || 1; // Current page, default 1
-  const limit = 10; // Number of users per page
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+  const { role, search } = req.query;
+
+  // Authoritative classification by ROLE (never by name/email/host-profile):
+  //   role=customer → everyone who is NOT Admin/Host (incl. legacy null role)
+  //   role=host     → host login identities (role "Host")
+  //   (omitted)     → all (back-compat)
+  const filter = {};
+  if (role === "customer") filter.role = { $nin: ["Admin", "Host"] };
+  else if (role === "host") filter.role = "Host";
+  if (search) {
+    filter.$or = [
+      { name: { $regex: search, $options: "i" } },
+      { email: { $regex: search, $options: "i" } },
+      { phone: { $regex: search, $options: "i" } },
+    ];
+  }
+
   try {
-    const users = await User.find()
+    const users = await User.find(filter)
+      .select("-password")
       .sort({ _id: -1 })
       .skip((page - 1) * limit)
       .limit(limit);
+    const total = await User.countDocuments(filter);
 
-    res.status(201).json({
+    res.status(200).json({
       success: true,
       users,
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
