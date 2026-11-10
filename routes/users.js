@@ -25,6 +25,7 @@ import {
   verifyEmailOtpHandler,
 } from "../controllers/users.js";
 import { catchAsync } from "../middlewares/index.js";
+import { isAdmin } from "../middlewares/isAdmin.js";
 
 export const authRoutes = Router();
 
@@ -54,7 +55,8 @@ authRoutes.get("/forgotPassword/:email", catchAsync(forgetPassword));
 authRoutes.post("/changepassword", catchAsync(changePassword));
 
 // Get all Users
-authRoutes.get("/users", catchAsync(getAllUsers));
+// Admin-only: this returns user PII (name/email/phone); was PUBLIC.
+authRoutes.get("/users", isAdmin, catchAsync(getAllUsers));
 authRoutes.get("/user/:id", catchAsync(getUser));
 authRoutes.post("/editUser", catchAsync(editUser));
 authRoutes.post("/editinfluencer", catchAsync(editinfluencer));
