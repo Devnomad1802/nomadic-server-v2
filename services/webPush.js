@@ -1,5 +1,9 @@
-import webpush from "web-push";
+import { createRequire } from "module";
 import { PushSubscription } from "../models/pushSubscription.js";
+
+// web-push is CommonJS and exposes no ESM default export — load via require.
+const require = createRequire(import.meta.url);
+const webpush = require("web-push");
 
 // ─────────────────────────────────────────────────────────────
 // Web Push delivery. Configured from env (VAPID keys live server-side
