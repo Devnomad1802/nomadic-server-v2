@@ -130,3 +130,87 @@ export const markHostChatRead = async (req, res) => {
   if (!convo) return res.status(404).json({ error: "Conversation not found" });
   return res.status(200).json({ success: true });
 };
+
+// ─────────────────────────────────────────────────────────────
+// Admin monitoring (Admin → Host Messages). Read-only, admin-only.
+// Surfaces host<->traveller conversations with participants, trip, last message,
+// unread + moderation flags. Blocked (contact-sharing) messages are never stored,
+// so only platform-allowed messages appear; flags come from the moderation counters.
+// ─────────────────────────────────────────────────────────────
+import { Trips } from "../models/index.js";
+
+const isFlagged = (c) =>
+  (c?.moderation?.violations || 0) > 0 ||
+  (c?.moderation?.pausedUntil && new Date(c.moderation.pausedUntil) > new Date());
+
+// GET /api/host-chat/admin/conversations?page&limit&search&flagged
+export const getAdminConversations = async (req, res) => {
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 20;
+  const search = req.query.search || "";
+  const onlyFlagged = req.query.flagged === "true";
+
+  const filter = { "chat.0": { $exists: true } }; // only real conversations
+  if (req.query.hostId) filter.hostId = req.query.hostId; // track one host's chats
+  if (search) {
+    filter.$or = [
+      { Name: { $regex: search, $options: "i" } },
+      { Email: { $regex: search, $options: "i" } },
+      { tripName: { $regex: search, $options: "i" } },
+    ];
+  }
+
+  const all = await Enquire.find(filter).sort({ Date: -1 }).lean();
+  const tripIds = [...new Set(all.map((c) => c.tripId).filter(Boolean))];
+  const hostIds = [...new Set(all.map((c) => c.hostId).filter(Boolean))];
+  const trips = await Trips.find({ _id: { $in: tripIds } }).select("title").lean();
+  const hosts = await Host.find({ _id: { $in: hostIds } }).select("hostTitle hostName").lean();
+  const tMap = Object.fromEntries(trips.map((t) => [`${t._id}`, t.title]));
+  const hMap = Object.fromEntries(hosts.map((h) => [`${h._id}`, h.hostTitle || h.hostName]));
+
+  let rows = all.map((c) => {
+    const last = c.chat?.[c.chat.length - 1];
+    return {
+      _id: c._id,
+      customerName: c.Name || "—",
+      customerEmail: c.Email || "—",
+      hostName: hMap[c.hostId] || "—",
+      tripName: c.tripName || tMap[c.tripId] || "—",
+      lastMessage: (last?.Message || "").slice(0, 90),
+      lastAt: last?.timeStamp || c.Date,
+      messageCount: c.chat?.length || 0,
+      unread: (c.hostUnread || 0) + (c.userUnread || 0),
+      flagged: isFlagged(c),
+    };
+  });
+  if (onlyFlagged) rows = rows.filter((r) => r.flagged);
+
+  const total = rows.length;
+  const data = rows.slice((page - 1) * limit, page * limit);
+  return res.status(200).json({ success: true, data, total, page, totalPages: Math.ceil(total / limit) });
+};
+
+// GET /api/host-chat/admin/conversations/:id — full thread (admin-only).
+export const getAdminConversation = async (req, res) => {
+  const c = await Enquire.findById(req.params.id).lean();
+  if (!c) return res.status(404).json({ error: "Conversation not found" });
+  let tripName = c.tripName || "";
+  let hostName = "";
+  if (!tripName && c.tripId) tripName = (await Trips.findById(c.tripId).select("title").lean())?.title || "";
+  if (c.hostId) {
+    const h = await Host.findById(c.hostId).select("hostTitle hostName").lean();
+    hostName = h?.hostTitle || h?.hostName || "";
+  }
+  return res.status(200).json({
+    success: true,
+    data: {
+      _id: c._id,
+      customer: { name: c.Name || "—", email: c.Email || "—", phone: c.Phone || "—" },
+      hostName: hostName || "—",
+      tripName: tripName || "—",
+      flagged: isFlagged(c),
+      moderation: { violations: c.moderation?.violations || 0, pausedUntil: c.moderation?.pausedUntil || null },
+      messages: (c.chat || []).map((m) => ({ by: m.MessageBy, text: m.Message, at: m.timeStamp })),
+    },
+  });
+};
