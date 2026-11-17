@@ -177,7 +177,17 @@ export const activateHost = async (req, res) => {
   host.dashboardAccess = true; // activation enables dashboard login
   await host.save();
 
-  const dashboardUrl = `${process.env.HOST_DASHBOARD_URL || "https://nomadic-host-v2-en3hbpf55-devnomad1802s-projects.vercel.app"}/login`;
+  // The invite MUST point at the PUBLIC production host dashboard — never a
+  // Vercel *preview* deployment, which Vercel Deployment Protection gates behind
+  // a Vercel login (the reported "sign into Vercel" screen). Set
+  // HOST_DASHBOARD_URL to the production domain (e.g. https://host.nomadictownies.com)
+  // and ensure Vercel Authentication/Deployment Protection is OFF for that
+  // production deployment (the app guards itself via its own /login).
+  const dashboardBase = (process.env.HOST_DASHBOARD_URL || "https://host.nomadictownies.com").replace(/\/+$/, "");
+  if (!process.env.HOST_DASHBOARD_URL) {
+    console.warn("activateHost: HOST_DASHBOARD_URL not set — using production default; set it to the public host dashboard domain.");
+  }
+  const dashboardUrl = `${dashboardBase}/login`;
 
   await notifyHost(
     host._id,
