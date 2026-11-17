@@ -4,6 +4,7 @@ import { uploadFilesToS3 } from "../middlewares/index.js";
 import { Host } from "../models/hosts.js";
 import { containsContactInfo, CONTACT_WARNING } from "../utils/contactModeration.js";
 import { validateMessage, serializeEnquiryForParticipant } from "../utils/chatSerialize.js";
+import { isEarningBooking, earningRevenue } from "../utils/bookingRevenue.js";
 import { User } from "../models/user.js";
 import { Trips } from "../models/trips.js";
 import { Bookings } from "../models/bookings.js";
@@ -498,10 +499,11 @@ export const getMyAnalytics = async (req, res) => {
 
   const trips = await Trips.find({ host: host._id }).select("_id title viewCount Status enableBooking");
   const tripIds = trips.map((t) => String(t._id));
-  const bookings = await Bookings.find({ tripId: { $in: tripIds } }).select("tripId total");
+  const bookings = await Bookings.find({ tripId: { $in: tripIds } }).select("tripId total paymentStatus status");
 
   const byTrip = trips.map((t) => {
-    const b = bookings.filter((x) => x.tripId === String(t._id));
+    // Count only paid, non-cancelled bookings — no pending/refunded/failed inflation.
+    const b = bookings.filter((x) => x.tripId === String(t._id) && isEarningBooking(x));
     const revenue = b.reduce((s, x) => s + (Number(x.total) || 0), 0);
     const views = Number(t.viewCount) || 0;
     return {
@@ -550,7 +552,8 @@ export const getMyOverview = async (req, res) => {
     Payout.find({ host: host._id }).select("amount status createdAt"),
   ]);
 
-  const grossRevenue = bookings.reduce((s, b) => s + (Number(b.total) || 0), 0);
+  // Revenue counts only paid, non-cancelled bookings (never pending/refunded/failed).
+  const grossRevenue = earningRevenue(bookings);
   const paidOut = payouts
     .filter((p) => ["processed", "completed", "paid"].includes(String(p.status).toLowerCase()))
     .reduce((s, p) => s + (Number(p.amount) || 0), 0);
@@ -579,6 +582,7 @@ export const getMyOverview = async (req, res) => {
             const label = d.toLocaleString("en-IN", { month: "short" });
             const value = bookings
               .filter((b) => {
+                if (!isEarningBooking(b)) return false; // paid, non-cancelled only
                 const bd = new Date(b.DateOfBooking);
                 return !isNaN(bd) && bd.getFullYear() === d.getFullYear() && bd.getMonth() === d.getMonth();
               })
