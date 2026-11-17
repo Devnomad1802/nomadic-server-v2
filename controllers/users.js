@@ -529,7 +529,15 @@ export const editUser = async (req, res) => {
       if (req.body.name !== undefined) user.name = req.body.name;
       if (req.body.email !== undefined) user.email = req.body.email;
       if (req.body.gender !== undefined) user.gender = req.body.gender;
-      if (req.body.phone !== undefined) user.phone = req.body.phone;
+      if (req.body.phone !== undefined) {
+        // E.164 sanity (digits incl. country code, 8–15 per the standard).
+        const digits = `${req.body.phone}`.replace(/\D/g, "");
+        if (digits && (digits.length < 8 || digits.length > 15)) {
+          await cleanupUploadedFiles(req);
+          return res.status(400).json({ error: "Invalid phone number" });
+        }
+        if (digits) user.phone = digits;
+      }
 
       // Handle profile image upload
       const oldProfileImage = user.profileImage;
