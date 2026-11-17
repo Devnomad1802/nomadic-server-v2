@@ -17,6 +17,10 @@ import {
   editMyEnquiryMessage,
   deleteMyEnquiryMessage,
   markEnquiryRead,
+  streamMyEvents,
+  getPushKey,
+  subscribePush,
+  unsubscribePush,
   updateMyTrip,
   uploadMyDocuments,
   activateHost,
@@ -60,6 +64,12 @@ HostPortalRoutes.post("/me/enquiries/:id/reply", auth, catchAsync(replyToEnquiry
 HostPortalRoutes.put("/me/enquiries/:id/messages/:msgId", auth, catchAsync(editMyEnquiryMessage));
 HostPortalRoutes.delete("/me/enquiries/:id/messages/:msgId", auth, catchAsync(deleteMyEnquiryMessage));
 HostPortalRoutes.post("/me/enquiries/:id/read", auth, catchAsync(markEnquiryRead));
+// SSE stream — self-authenticates via ?token= (EventSource can't set headers).
+HostPortalRoutes.get("/me/events", streamMyEvents);
+// Web Push subscription management (host JWT).
+HostPortalRoutes.get("/me/push/key", auth, catchAsync(getPushKey));
+HostPortalRoutes.post("/me/push/subscribe", auth, catchAsync(subscribePush));
+HostPortalRoutes.post("/me/push/unsubscribe", auth, catchAsync(unsubscribePush));
 HostPortalRoutes.post("/me/documents", auth, catchAsync(uploadMyDocuments));
 HostPortalRoutes.get("/me/analytics", auth, catchAsync(getMyAnalytics));
 HostPortalRoutes.get("/me/notifications", auth, catchAsync(getMyNotifications));
