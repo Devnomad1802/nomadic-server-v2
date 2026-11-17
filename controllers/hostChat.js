@@ -151,6 +151,7 @@ export const getAdminConversations = async (req, res) => {
   const onlyFlagged = req.query.flagged === "true";
 
   const filter = { "chat.0": { $exists: true } }; // only real conversations
+  if (req.query.hostId) filter.hostId = req.query.hostId; // track one host's chats
   if (search) {
     filter.$or = [
       { Name: { $regex: search, $options: "i" } },
