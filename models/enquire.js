@@ -44,6 +44,23 @@ const userSchema = mongoose.Schema({
         type: Date,
         default: new Date(new Date().toUTCString()),
       },
+      // ── Edit / delete audit trail (additive; legacy messages have none) ──
+      edited: { type: Boolean, default: false },
+      editedAt: { type: Date, default: null },
+      // Soft delete only — content moves to history, Message replaced by
+      // placeholder for participant APIs; admins keep the original via history.
+      deleted: { type: Boolean, default: false },
+      deletedAt: { type: Date, default: null },
+      deletedBy: { type: String, default: null }, // "host" | "admin"
+      // Immutable prior versions (admin/forensic only, never sent to participants).
+      history: [
+        {
+          Message: { type: String },
+          editorRole: { type: String }, // "host" | "admin"
+          at: { type: Date, default: Date.now },
+          action: { type: String }, // "edit" | "delete"
+        },
+      ],
     },
   ],
 });

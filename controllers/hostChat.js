@@ -1,5 +1,6 @@
 import { Enquire, Host } from "../models/index.js";
 import { containsContactInfo, CONTACT_WARNING } from "../utils/contactModeration.js";
+import { validateMessage, serializeChatForParticipant, serializeEnquiryForParticipant } from "../utils/chatSerialize.js";
 
 // ─────────────────────────────────────────────────────────────
 // Platform chat between a logged-in traveller and a host.
@@ -39,16 +40,15 @@ export const startHostChat = async (req, res) => {
   const userId = req.user?._id;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   const { hostId, message } = req.body || {};
-  if (!hostId || !String(message || "").trim()) {
-    return res.status(400).json({ error: "hostId and message are required" });
-  }
+  if (!hostId) return res.status(400).json({ error: "hostId is required" });
+  const { text, error } = validateMessage(message);
+  if (error) return res.status(400).json({ error });
   const host = await Host.findById(hostId).select("hostName hostTitle brandingLogo");
   if (!host) return res.status(404).json({ error: "Host not found" });
 
   let convo = await Enquire.findOne({ userId: String(userId), hostId: String(hostId) });
-  if (await moderate(convo, message, res)) return;
+  if (await moderate(convo, text, res)) return;
 
-  const text = String(message).trim().slice(0, 2000);
   if (!convo) {
     convo = await Enquire.create({
       userId: String(userId),
@@ -69,7 +69,7 @@ export const startHostChat = async (req, res) => {
     convo.hostUnread = (convo.hostUnread || 0) + 1;
     await convo.save();
   }
-  return res.status(201).json({ success: true, data: convo });
+  return res.status(201).json({ success: true, data: serializeEnquiryForParticipant(convo) });
 };
 
 // GET /host-chat/mine  (user JWT) — user's conversations with host names.
@@ -90,7 +90,7 @@ export const getMyHostChats = async (req, res) => {
           verified: !!hostMap[c.hostId].isVerified,
         }
       : null,
-    chat: c.chat || [],
+    chat: serializeChatForParticipant(c.chat),
     userUnread: c.userUnread || 0,
     status: c.status,
     Date: c.Date,
@@ -102,20 +102,20 @@ export const getMyHostChats = async (req, res) => {
 export const sendHostChatMessage = async (req, res) => {
   const userId = req.user?._id;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
-  const { message } = req.body || {};
-  if (!String(message || "").trim()) return res.status(400).json({ error: "Message is required" });
+  const { text, error } = validateMessage(req.body?.message);
+  if (error) return res.status(400).json({ error });
 
   const convo = await Enquire.findOne({ _id: req.params.id, userId: String(userId) });
   if (!convo) return res.status(404).json({ error: "Conversation not found" });
-  if (await moderate(convo, message, res)) return;
+  if (await moderate(convo, text, res)) return;
 
   convo.chat = convo.chat || [];
-  convo.chat.push({ MessageBy: "user", Message: String(message).trim().slice(0, 2000), timeStamp: new Date() });
+  convo.chat.push({ MessageBy: "user", Message: text, timeStamp: new Date() });
   convo.status = "Open";
   convo.Date = new Date();
   convo.hostUnread = (convo.hostUnread || 0) + 1;
   await convo.save();
-  return res.status(200).json({ success: true, data: convo });
+  return res.status(200).json({ success: true, data: serializeEnquiryForParticipant(convo) });
 };
 
 // POST /host-chat/:id/read  (user JWT) — clear the user's unread counter.
@@ -170,13 +170,14 @@ export const getAdminConversations = async (req, res) => {
 
   let rows = all.map((c) => {
     const last = c.chat?.[c.chat.length - 1];
+    const lastText = last?.deleted ? "(deleted message)" : (last?.Message || "");
     return {
       _id: c._id,
       customerName: c.Name || "—",
       customerEmail: c.Email || "—",
       hostName: hMap[c.hostId] || "—",
       tripName: c.tripName || tMap[c.tripId] || "—",
-      lastMessage: (last?.Message || "").slice(0, 90),
+      lastMessage: lastText.slice(0, 90),
       lastAt: last?.timeStamp || c.Date,
       messageCount: c.chat?.length || 0,
       unread: (c.hostUnread || 0) + (c.userUnread || 0),
@@ -210,7 +211,20 @@ export const getAdminConversation = async (req, res) => {
       tripName: tripName || "—",
       flagged: isFlagged(c),
       moderation: { violations: c.moderation?.violations || 0, pausedUntil: c.moderation?.pausedUntil || null },
-      messages: (c.chat || []).map((m) => ({ by: m.MessageBy, text: m.Message, at: m.timeStamp })),
+      // Admin sees the full audit trail: current text, edited/deleted flags,
+      // and immutable version history (host can never erase these).
+      messages: (c.chat || []).map((m) => ({
+        _id: m._id,
+        by: m.MessageBy,
+        text: m.Message, // admins keep the original even when deleted
+        at: m.timeStamp,
+        edited: !!m.edited,
+        editedAt: m.editedAt || null,
+        deleted: !!m.deleted,
+        deletedBy: m.deletedBy || null,
+        deletedAt: m.deletedAt || null,
+        history: (m.history || []).map((h) => ({ text: h.Message, editorRole: h.editorRole, at: h.at, action: h.action })),
+      })),
     },
   });
 };

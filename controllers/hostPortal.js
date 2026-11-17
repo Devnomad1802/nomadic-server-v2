@@ -3,6 +3,7 @@ import { Resend } from "resend";
 import { uploadFilesToS3 } from "../middlewares/index.js";
 import { Host } from "../models/hosts.js";
 import { containsContactInfo, CONTACT_WARNING } from "../utils/contactModeration.js";
+import { validateMessage, serializeEnquiryForParticipant } from "../utils/chatSerialize.js";
 import { User } from "../models/user.js";
 import { Trips } from "../models/trips.js";
 import { Bookings } from "../models/bookings.js";
@@ -113,7 +114,8 @@ export const getMyEnquiries = async (req, res) => {
   const host = await requireHost(req, res);
   if (!host) return;
   const enquiries = await Enquire.find({ hostId: String(host._id) }).sort({ Date: -1 });
-  return res.status(200).json({ success: true, data: enquiries });
+  const safe = enquiries.map(serializeEnquiryForParticipant);
+  return res.status(200).json({ success: true, data: safe });
 };
 
 /* ------------------------------------------------------------------
@@ -317,10 +319,8 @@ export const submitMyVerification = async (req, res) => {
 export const replyToEnquiry = async (req, res) => {
   const host = await requireHost(req, res);
   if (!host) return;
-  const { message } = req.body;
-  if (!message || !String(message).trim()) {
-    return res.status(400).json({ success: false, message: "Message is required." });
-  }
+  const { text, error } = validateMessage(req.body?.message);
+  if (error) return res.status(400).json({ success: false, message: error });
   const enquiry = await Enquire.findOne({ _id: req.params.id, hostId: String(host._id) });
   if (!enquiry) {
     return res.status(404).json({ success: false, message: "Enquiry not found." });
@@ -330,7 +330,7 @@ export const replyToEnquiry = async (req, res) => {
   if (pausedUntil && new Date(pausedUntil) > new Date()) {
     return res.status(429).json({ success: false, code: "CHAT_PAUSED", message: "Chat is paused for a while after repeated attempts to share contact details. Try again later." });
   }
-  if (containsContactInfo(message)) {
+  if (containsContactInfo(text)) {
     enquiry.moderation = enquiry.moderation || {};
     enquiry.moderation.violations = (enquiry.moderation.violations || 0) + 1;
     if (enquiry.moderation.violations >= 3) {
@@ -341,12 +341,93 @@ export const replyToEnquiry = async (req, res) => {
     return res.status(422).json({ success: false, code: "CONTACT_BLOCKED", message: CONTACT_WARNING });
   }
   enquiry.chat = enquiry.chat || [];
-  enquiry.chat.push({ MessageBy: "host", Message: String(message).trim().slice(0, 2000), timeStamp: new Date() });
-  enquiry.Reply = String(message);
+  enquiry.chat.push({ MessageBy: "host", Message: text, timeStamp: new Date() });
+  enquiry.Reply = text;
   enquiry.status = "Replied";
   enquiry.userUnread = (enquiry.userUnread || 0) + 1;
   await enquiry.save();
-  return res.status(200).json({ success: true, data: enquiry });
+  return res.status(200).json({ success: true, data: serializeEnquiryForParticipant(enquiry) });
+};
+
+// Shared guard: find the host's own enquiry + the host-authored, live message.
+const findHostOwnMessage = async (req, res, host) => {
+  const enquiry = await Enquire.findOne({ _id: req.params.id, hostId: String(host._id) });
+  if (!enquiry) {
+    res.status(404).json({ success: false, message: "Enquiry not found." });
+    return {};
+  }
+  const msg = (enquiry.chat || []).id(req.params.msgId);
+  if (!msg) {
+    res.status(404).json({ success: false, message: "Message not found." });
+    return { enquiry };
+  }
+  // Ownership: a host may only touch messages they authored.
+  if (String(msg.MessageBy).toLowerCase() !== "host") {
+    res.status(403).json({ success: false, message: "You can only edit or delete your own messages." });
+    return { enquiry };
+  }
+  if (msg.deleted) {
+    res.status(409).json({ success: false, message: "This message was deleted." });
+    return { enquiry };
+  }
+  return { enquiry, msg };
+};
+
+// PUT /host-portal/me/enquiries/:id/messages/:msgId — host edits own message.
+export const editMyEnquiryMessage = async (req, res) => {
+  const host = await requireHost(req, res);
+  if (!host) return;
+  const { text, error } = validateMessage(req.body?.message);
+  if (error) return res.status(400).json({ success: false, message: error });
+  const { enquiry, msg } = await findHostOwnMessage(req, res, host);
+  if (!msg) return;
+  // Optimistic-concurrency guard against a stale overwrite.
+  if (req.body?.expectedTimeStamp && msg.editedAt &&
+      new Date(req.body.expectedTimeStamp).getTime() !== new Date(msg.editedAt).getTime()) {
+    return res.status(409).json({ success: false, code: "CONFLICT", message: "This message changed since you opened it. Reload and try again." });
+  }
+  // Re-run contact moderation on the edited content (server is authority).
+  const pausedUntil = enquiry?.moderation?.pausedUntil;
+  if (pausedUntil && new Date(pausedUntil) > new Date()) {
+    return res.status(429).json({ success: false, code: "CHAT_PAUSED", message: "Chat is paused for a while after repeated attempts to share contact details. Try again later." });
+  }
+  if (containsContactInfo(text)) {
+    enquiry.moderation = enquiry.moderation || {};
+    enquiry.moderation.violations = (enquiry.moderation.violations || 0) + 1;
+    if (enquiry.moderation.violations >= 3) {
+      enquiry.moderation.pausedUntil = new Date(Date.now() + 60 * 60 * 1000);
+      enquiry.moderation.violations = 0;
+    }
+    await enquiry.save();
+    return res.status(422).json({ success: false, code: "CONTACT_BLOCKED", message: CONTACT_WARNING });
+  }
+  if (text === msg.Message) {
+    return res.status(200).json({ success: true, data: serializeEnquiryForParticipant(enquiry) });
+  }
+  msg.history = msg.history || [];
+  msg.history.push({ Message: msg.Message, editorRole: "host", at: new Date(), action: "edit" });
+  msg.Message = text;
+  msg.edited = true;
+  msg.editedAt = new Date();
+  await enquiry.save();
+  return res.status(200).json({ success: true, data: serializeEnquiryForParticipant(enquiry) });
+};
+
+// DELETE /host-portal/me/enquiries/:id/messages/:msgId — host soft-deletes own message.
+export const deleteMyEnquiryMessage = async (req, res) => {
+  const host = await requireHost(req, res);
+  if (!host) return;
+  const { enquiry, msg } = await findHostOwnMessage(req, res, host);
+  if (!msg) return;
+  // Preserve the original for admin/forensic review, then tombstone it.
+  msg.history = msg.history || [];
+  msg.history.push({ Message: msg.Message, editorRole: "host", at: new Date(), action: "delete" });
+  msg.deleted = true;
+  msg.deletedAt = new Date();
+  msg.deletedBy = "host";
+  // Keep the original content in Message for admins; participant APIs mask it.
+  await enquiry.save();
+  return res.status(200).json({ success: true, data: serializeEnquiryForParticipant(enquiry) });
 };
 
 // PUT /host-portal/me/trips/:id — host edits their OWN trip and resubmits.
