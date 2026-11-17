@@ -1,6 +1,20 @@
 import { Enquire, Host } from "../models/index.js";
 import { containsContactInfo, CONTACT_WARNING } from "../utils/contactModeration.js";
 import { validateMessage, serializeChatForParticipant, serializeEnquiryForParticipant } from "../utils/chatSerialize.js";
+import { emitToHost } from "../services/hostEvents.js";
+import { sendPushToHost } from "../services/webPush.js";
+
+// Notify a host of a new customer message: realtime SSE + web push.
+// Payload carries NO message body or customer PII — only an opaque deep link.
+const notifyHostMessage = (hostId, enquiryId, hostUnread) => {
+  emitToHost(hostId, { type: "message", enquiryId: String(enquiryId), hostUnread: hostUnread || 0 });
+  // Fire-and-forget; never blocks the reply path.
+  sendPushToHost(hostId, {
+    title: "New message",
+    body: "You have a new message on Nomadic Townies. Open your inbox to reply.",
+    url: `/enquiries?convo=${enquiryId}`,
+  }).catch(() => {});
+};
 
 // ─────────────────────────────────────────────────────────────
 // Platform chat between a logged-in traveller and a host.
@@ -69,6 +83,7 @@ export const startHostChat = async (req, res) => {
     convo.hostUnread = (convo.hostUnread || 0) + 1;
     await convo.save();
   }
+  notifyHostMessage(hostId, convo._id, convo.hostUnread);
   return res.status(201).json({ success: true, data: serializeEnquiryForParticipant(convo) });
 };
 
@@ -115,6 +130,7 @@ export const sendHostChatMessage = async (req, res) => {
   convo.Date = new Date();
   convo.hostUnread = (convo.hostUnread || 0) + 1;
   await convo.save();
+  notifyHostMessage(convo.hostId, convo._id, convo.hostUnread);
   return res.status(200).json({ success: true, data: serializeEnquiryForParticipant(convo) });
 };
 

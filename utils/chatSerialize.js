@@ -38,9 +38,22 @@ export const serializeMessageForParticipant = (m) => {
 export const serializeChatForParticipant = (chat = []) =>
   (chat || []).map(serializeMessageForParticipant);
 
-// Full enquiry doc → participant-safe JSON (chat sanitized, everything else kept).
+// Full enquiry doc → participant-safe JSON. Chat is sanitized AND the
+// customer's contact PII (Email, Phone, userId, dedupeKey) is dropped — the
+// host never receives it. Platform policy: parties communicate only in-app.
+const HOST_SAFE_FIELDS = [
+  "_id", "Name", "Message", "status", "tripId", "tripName",
+  "source", "batchInfo", "partySize", "Date", "hostUnread", "userUnread",
+];
 export const serializeEnquiryForParticipant = (enquiry) => {
   const o = typeof enquiry.toObject === "function" ? enquiry.toObject() : { ...enquiry };
-  o.chat = serializeChatForParticipant(o.chat);
-  return o;
+  const safe = {};
+  for (const k of HOST_SAFE_FIELDS) if (o[k] !== undefined) safe[k] = o[k];
+  // Moderation state the UI needs (pause banner) — no PII.
+  safe.moderation = {
+    violations: o.moderation?.violations || 0,
+    pausedUntil: o.moderation?.pausedUntil || null,
+  };
+  safe.chat = serializeChatForParticipant(o.chat);
+  return safe;
 };

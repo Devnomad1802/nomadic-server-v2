@@ -5,6 +5,9 @@ import { Host } from "../models/hosts.js";
 import { containsContactInfo, CONTACT_WARNING } from "../utils/contactModeration.js";
 import { validateMessage, serializeEnquiryForParticipant } from "../utils/chatSerialize.js";
 import { isEarningBooking, earningRevenue } from "../utils/bookingRevenue.js";
+import jwt from "jsonwebtoken";
+import { addClient, removeClient } from "../services/hostEvents.js";
+import { saveSubscription, removeSubscription, vapidPublicKey } from "../services/webPush.js";
 import { User } from "../models/user.js";
 import { Trips } from "../models/trips.js";
 import { Bookings } from "../models/bookings.js";
@@ -117,6 +120,66 @@ export const getMyEnquiries = async (req, res) => {
   const enquiries = await Enquire.find({ hostId: String(host._id) }).sort({ Date: -1 });
   const safe = enquiries.map(serializeEnquiryForParticipant);
   return res.status(200).json({ success: true, data: safe });
+};
+
+// GET /host-portal/me/push/key — VAPID public key for the client.
+export const getPushKey = async (req, res) => {
+  const host = await requireHost(req, res);
+  if (!host) return;
+  return res.status(200).json({ success: true, publicKey: vapidPublicKey() });
+};
+
+// POST /host-portal/me/push/subscribe { subscription, userAgent }
+export const subscribePush = async (req, res) => {
+  const host = await requireHost(req, res);
+  if (!host) return;
+  try {
+    await saveSubscription(host._id, req.body?.subscription, req.body?.userAgent);
+    return res.status(201).json({ success: true });
+  } catch {
+    return res.status(400).json({ success: false, message: "Invalid subscription." });
+  }
+};
+
+// POST /host-portal/me/push/unsubscribe { endpoint }
+export const unsubscribePush = async (req, res) => {
+  const host = await requireHost(req, res);
+  if (!host) return;
+  await removeSubscription(req.body?.endpoint);
+  return res.status(200).json({ success: true });
+};
+
+// GET /host-portal/me/events?token=JWT — Server-Sent Events stream.
+// EventSource cannot send Authorization headers, so the JWT arrives as a
+// query param (HTTPS only). Events carry no message body or PII.
+export const streamMyEvents = async (req, res) => {
+  const token = req.query.token;
+  if (!token) return res.status(401).json({ success: false, message: "Token required." });
+  let user;
+  try {
+    const payload = jwt.verify(String(token), process.env.APP_SECRET);
+    user = await User.findById(payload._id);
+  } catch {
+    return res.status(401).json({ success: false, message: "Invalid token." });
+  }
+  const host = await resolveHost(user);
+  if (!host) return res.status(404).json({ success: false, message: "Host not found." });
+
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no", // disable nginx buffering
+  });
+  res.write(`event: ready\ndata: {"ok":true}\n\n`);
+  addClient(host._id, res);
+  const heartbeat = setInterval(() => {
+    try { res.write(": hb\n\n"); } catch { /* cleaned up on close */ }
+  }, 25000);
+  req.on("close", () => {
+    clearInterval(heartbeat);
+    removeClient(host._id, res);
+  });
 };
 
 /* ------------------------------------------------------------------
