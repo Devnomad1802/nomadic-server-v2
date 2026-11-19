@@ -41,8 +41,11 @@ const userSchema = mongoose.Schema({
         required: false,
       },
       timeStamp: {
+        // Must be a function, not a value. `new Date(...)` here would be
+        // evaluated once at model-load and freeze every auto-defaulted
+        // timestamp to server boot time, scrambling chat chronology.
         type: Date,
-        default: new Date(new Date().toUTCString()),
+        default: Date.now,
       },
       // ── Edit / delete audit trail (additive; legacy messages have none) ──
       edited: { type: Boolean, default: false },

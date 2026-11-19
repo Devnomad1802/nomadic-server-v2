@@ -35,8 +35,25 @@ export const serializeMessageForParticipant = (m) => {
   };
 };
 
+// Oldest → newest by timeStamp, with a STABLE tie-break on original (insertion)
+// order so equal or missing timestamps never reshuffle. Pure; does not mutate
+// the input array. Reinforces chronology at the API boundary regardless of how
+// the client renders.
+export const orderChatAsc = (chat = []) =>
+  (chat || [])
+    .map((m, i) => ({ m, i }))
+    .sort((a, b) => {
+      const ta = new Date(a.m?.timeStamp ?? NaN).getTime();
+      const tb = new Date(b.m?.timeStamp ?? NaN).getTime();
+      const aBad = isNaN(ta);
+      const bBad = isNaN(tb);
+      if (aBad || bBad) return a.i - b.i; // undated → keep insertion order
+      return ta - tb || a.i - b.i;
+    })
+    .map((x) => x.m);
+
 export const serializeChatForParticipant = (chat = []) =>
-  (chat || []).map(serializeMessageForParticipant);
+  orderChatAsc(chat).map(serializeMessageForParticipant);
 
 // Full enquiry doc → participant-safe JSON. Chat is sanitized AND the
 // customer's contact PII (Email, Phone, userId, dedupeKey) is dropped — the
