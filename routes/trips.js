@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { catchAsync, authRole } from "../middlewares/index.js";
-import { AddTrip, updateTrip, updateTripStatus } from "../controllers/trips.js";
+import { AddTrip, updateTrip, updateTripStatus, updateTripVisibility } from "../controllers/trips.js";
 import { GetAllTrips } from "../controllers/trips.js";
 import { GetTripsById } from "../controllers/trips.js";
 import {
@@ -20,6 +20,7 @@ export const TipsRouts = Router();
 TipsRouts.post("/addTrip", ...authRole("Admin", "Host"), catchAsync(AddTrip));
 TipsRouts.post("/updateTrip", ...authRole("Admin"), catchAsync(updateTrip));
 TipsRouts.post("/updateTripStatus", ...authRole("Admin"), catchAsync(updateTripStatus));
+TipsRouts.post("/updateTripVisibility", ...authRole("Admin"), catchAsync(updateTripVisibility));
 
 // Public reads (unchanged)
 TipsRouts.get("/GetAllTrips", catchAsync(GetAllTrips));

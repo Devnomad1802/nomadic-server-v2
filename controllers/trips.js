@@ -586,7 +586,7 @@ export const GetAllTripsForUser = async (req, res) => {
   try {
     // Public listing: hide host proposals awaiting/denied admin approval.
     // $nin also matches docs without a Status field, so legacy/admin trips stay visible.
-    const trips = await Trips.find({ enableBooking: true, Status: { $nin: ["pending", "rejected"] } })
+    const trips = await Trips.find({ enableBooking: true, Status: { $nin: ["pending", "rejected"] }, showOnWebsite: { $ne: false } })
       .populate('host', '-bankName -accountNumber -ifscCode -accountHolderName -panNumber -gstNumber -documents -contact_id -fund_account_id -commissionRate')
       .sort({ date: -1 })
       .lean();
@@ -605,7 +605,7 @@ export const GetAllTripsForUser = async (req, res) => {
 };
 export const GetTrendingTrips = async (req, res) => {
   try {
-    const trips = await Trips.find({ Trending: true, Status: { $nin: ["pending", "rejected"] } })
+    const trips = await Trips.find({ Trending: true, Status: { $nin: ["pending", "rejected"] }, showOnWebsite: { $ne: false } })
       .populate('host', '-bankName -accountNumber -ifscCode -accountHolderName -panNumber -gstNumber -documents -contact_id -fund_account_id -commissionRate')
       .sort({ date: -1 });
     return res
@@ -662,7 +662,7 @@ export const GetTripsByCagtegory = async (req, res) => {
 
     // Fetch all trips and filter in memory to handle both array format and legacy comma-separated format
     // (exclude host proposals awaiting/denied admin approval)
-    const allTrips = await Trips.find({ Status: { $nin: ["pending", "rejected"] } })
+    const allTrips = await Trips.find({ Status: { $nin: ["pending", "rejected"] }, showOnWebsite: { $ne: false } })
       .populate('host', '-bankName -accountNumber -ifscCode -accountHolderName -panNumber -gstNumber -documents -contact_id -fund_account_id -commissionRate')
       .sort({ date: -1 });
 
@@ -750,7 +750,7 @@ export const GetAllTripsWithFilter = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
-    const approvalGate = { Status: { $nin: ["pending", "rejected"] } };
+    const approvalGate = { Status: { $nin: ["pending", "rejected"] }, showOnWebsite: { $ne: false } };
     const trips = await Trips.find({
       $and: [{ $or: [{ status: status }, { type: type }] }, approvalGate],
     })
@@ -821,6 +821,32 @@ export const updateTripStatus = async (req, res) => {
     return res.status(200).json({ message: "Trip status updated", data: trip });
   } catch (error) {
     console.error("Error updating trip status:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+// --------------- toggle public website visibility (admin) ---------------
+// POST /updateTripVisibility  body: { tripId|_id, showOnWebsite: boolean }
+// Hiding excludes the trip from every public listing/detail surface while
+// preserving its content, bookings and host relationship. Does NOT touch
+// Status or enableBooking, so re-showing restores the prior state exactly.
+export const updateTripVisibility = async (req, res) => {
+  try {
+    const { tripId, _id, showOnWebsite } = req.body;
+    const id = tripId || _id;
+    if (!id) return res.status(400).json({ error: "Trip ID is required" });
+    if (typeof showOnWebsite !== "boolean") {
+      return res.status(400).json({ error: "showOnWebsite must be a boolean" });
+    }
+    const trip = await Trips.findByIdAndUpdate(id, { showOnWebsite }, { new: true })
+      .select("_id title showOnWebsite");
+    if (!trip) return res.status(404).json({ error: "Trip not found" });
+    return res.status(200).json({
+      message: `Trip ${showOnWebsite ? "is now visible on" : "is now hidden from"} the website`,
+      data: trip,
+    });
+  } catch (error) {
+    console.error("Error updating trip visibility:", error);
     return res.status(500).json({ error: "Internal server error" });
   }
 };

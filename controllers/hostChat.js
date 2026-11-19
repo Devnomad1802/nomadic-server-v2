@@ -1,6 +1,6 @@
 import { Enquire, Host } from "../models/index.js";
 import { containsContactInfo, CONTACT_WARNING } from "../utils/contactModeration.js";
-import { validateMessage, serializeChatForParticipant, serializeEnquiryForParticipant } from "../utils/chatSerialize.js";
+import { validateMessage, serializeChatForParticipant, serializeEnquiryForParticipant, orderChatAsc } from "../utils/chatSerialize.js";
 import { emitToHost } from "../services/hostEvents.js";
 import { sendPushToHost } from "../services/webPush.js";
 
@@ -185,7 +185,10 @@ export const getAdminConversations = async (req, res) => {
   const hMap = Object.fromEntries(hosts.map((h) => [`${h._id}`, h.hostTitle || h.hostName]));
 
   let rows = all.map((c) => {
-    const last = c.chat?.[c.chat.length - 1];
+    // Canonical "last message" = the newest by timestamp (not array tail, which
+    // can be wrong for legacy rows). Preview + lastAt come from that message.
+    const ordered = orderChatAsc(c.chat);
+    const last = ordered[ordered.length - 1];
     const lastText = last?.deleted ? "(deleted message)" : (last?.Message || "");
     return {
       _id: c._id,
@@ -201,6 +204,13 @@ export const getAdminConversations = async (req, res) => {
     };
   });
   if (onlyFlagged) rows = rows.filter((r) => r.flagged);
+
+  // Most recent retained message first, by canonical timestamp, with a stable
+  // tie-break on _id so equal timestamps keep a deterministic order.
+  rows.sort((a, b) => {
+    const diff = new Date(b.lastAt || 0).getTime() - new Date(a.lastAt || 0).getTime();
+    return diff || String(b._id).localeCompare(String(a._id));
+  });
 
   const total = rows.length;
   const data = rows.slice((page - 1) * limit, page * limit);
@@ -229,7 +239,7 @@ export const getAdminConversation = async (req, res) => {
       moderation: { violations: c.moderation?.violations || 0, pausedUntil: c.moderation?.pausedUntil || null },
       // Admin sees the full audit trail: current text, edited/deleted flags,
       // and immutable version history (host can never erase these).
-      messages: (c.chat || []).map((m) => ({
+      messages: orderChatAsc(c.chat).map((m) => ({
         _id: m._id,
         by: m.MessageBy,
         text: m.Message, // admins keep the original even when deleted
