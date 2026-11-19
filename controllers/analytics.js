@@ -1,4 +1,5 @@
 import { Bookings, Enquire, User, Trips } from "../models/index.js";
+import { isEarningBooking, platformCommissionPaise } from "../utils/bookingRevenue.js";
 
 /**
  * Reconstruct the grand total of a booking from its cardData blob.
@@ -54,6 +55,47 @@ export const isEligibleBooking = (b) =>
 // Created-but-unpaid (abandoned checkout), excluding test. Reported separately.
 export const isAbandonedBooking = (b) =>
   b?.paymentStatus === "created" && b?.mode !== "test";
+
+/**
+ * GET /api/analytics/platform-revenue  (Admin only)
+ * Nomadic Townies' OWN revenue = earned platform commission on eligible paid,
+ * non-test, non-cancelled bookings. Per booking: paid × that trip's
+ * commissionRate%. Computed in integer paise (decimal-safe) and reconciled to
+ * a per-booking ledger. Returns ₹0 when no qualifying booking exists — never a
+ * placeholder amount.
+ */
+export const getPlatformRevenue = async (req, res) => {
+  try {
+    const all = await Bookings.find().lean();
+    // Eligible = earning (paid, non-cancelled/refunded) AND not test-sandbox.
+    const eligible = all.filter((b) => isEarningBooking(b) && b?.mode !== "test");
+
+    const tripIds = [...new Set(eligible.map((b) => b.tripId).filter(Boolean))];
+    const trips = await Trips.find({ _id: { $in: tripIds } }).select("commissionRate").lean();
+    const rateMap = Object.fromEntries(trips.map((t) => [`${t._id}`, Number(t.commissionRate) || 0]));
+    const rateFor = (b) => rateMap[`${b.tripId}`] || 0;
+
+    const revenuePaise = platformCommissionPaise(eligible, rateFor);
+    // Bookings that actually contributed (had a trip + positive rate + paid).
+    const counted = eligible.filter((b) => (Number(b.total) || 0) > 0 && rateFor(b) > 0).length;
+    const missingRate = eligible.length - counted;
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        revenuePaise,
+        revenue: revenuePaise / 100, // rupees (2dp-safe: paise is integer)
+        eligibleBookings: eligible.length,
+        bookingsCounted: counted,
+        bookingsMissingRate: missingRate, // eligible but trip/rate absent → ₹0 contribution
+        currency: "INR",
+      },
+    });
+  } catch (error) {
+    console.error("getPlatformRevenue error:", error?.message || error);
+    return res.status(500).json({ success: false, error: "Could not compute platform revenue" });
+  }
+};
 
 /**
  * GET /api/analytics/overview?from=ISO&to=ISO
