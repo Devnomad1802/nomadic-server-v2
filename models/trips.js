@@ -37,6 +37,10 @@ const userSchema = mongoose.Schema({
   ratings: [{ type: String }],
   vendors: [{ type: String }],
   enableBooking: { type: Boolean, default: false },
+  // Admin website-visibility switch (mirrors Host.showOnWebsite). Default true
+  // so every existing/new trip stays visible unless an admin hides it. When
+  // false the trip is excluded from all public surfaces + direct detail.
+  showOnWebsite: { type: Boolean, default: true },
   Trending: { type: Boolean, default: false },
   enableEnquire: { type: Boolean, default: false },
   addsection: { type: String, default: false },
