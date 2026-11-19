@@ -61,7 +61,7 @@ export const createBookingEnquiry = async (req, res) => {
       status: "new",
       dedupeKey,
       Date: new Date(),
-      chat: [{ Message: message, MessageBy: "User", Date: new Date() }],
+      chat: [{ Message: message, MessageBy: "User", timeStamp: new Date() }],
     });
     await doc.save(); // success is reported ONLY after durable persistence
     return res.status(201).json({ ok: true, id: `${doc._id}` });
@@ -80,7 +80,7 @@ export const initateEnquery = async (req, res) => {
       message.push({
         Message: req.body.Message,
         MessageBy: "User",
-        Date: new Date(new Date().toUTCString()),
+        timeStamp: new Date(),
       });
       await Enquire.updateOne(
         {
@@ -108,7 +108,7 @@ export const initateEnquery = async (req, res) => {
           {
             Message: req.body.Message,
             MessageBy: "User",
-            Date: new Date(new Date().toUTCString()),
+            timeStamp: new Date(),
           },
         ],
         Date: new Date(new Date().toUTCString()),
@@ -133,7 +133,7 @@ export const replyEnquery = async (req, res) => {
       message.push({
         Message: req.body.Reply,
         MessageBy: "Admin",
-        Date: new Date(new Date().toUTCString()),
+        timeStamp: new Date(),
       });
       await Enquire.updateOne(
         {
