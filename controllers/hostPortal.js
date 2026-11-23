@@ -13,6 +13,7 @@ import {
   sideField,
   AADHAAR_SIDES,
 } from "../utils/aadhaarStorage.js";
+import { recomputeSections } from "../utils/tripPricing.js";
 import { Host } from "../models/hosts.js";
 import { containsContactInfo, CONTACT_WARNING } from "../utils/contactModeration.js";
 import { validateMessage, serializeEnquiryForParticipant } from "../utils/chatSerialize.js";
@@ -509,12 +510,16 @@ export const deleteMyEnquiryMessage = async (req, res) => {
 // PUT /host-portal/me/trips/:id — host edits their OWN trip and resubmits.
 // Any edit returns the trip to "pending" for admin re-review. Text fields
 // only (images unchanged); Status/host cannot be set by the host.
+//
+// commissionRate is ADMIN-ONLY and deliberately NOT in this list — the markup
+// belongs to the platform. `addsection` is handled separately below so the
+// server (not the client) computes each option's selling price.
 const HOST_EDITABLE_TRIP_FIELDS = [
   "title", "subTitle", "days", "nights", "location", "pickUp", "dropOff",
-  "categories", "overview", "type", "price", "strikePrice", "commissionRate",
+  "categories", "overview", "type", "price", "strikePrice",
   "firstBookingPrice", "Inclusion", "Exclusion", "ThingsToCarry", "Cancellation",
   "highlights", "numberOfDays", "numberOfSeats", "selectDate", "endSelectDate",
-  "addDays", "addsection", "tripOff", "metaDescription", "seoSlug", "seoTitle",
+  "addDays", "tripOff", "metaDescription", "seoSlug", "seoTitle",
 ];
 export const updateMyTrip = async (req, res) => {
   const host = await requireHost(req, res);
@@ -523,9 +528,26 @@ export const updateMyTrip = async (req, res) => {
   if (!trip) {
     return res.status(404).json({ success: false, message: "Trip not found." });
   }
+
+  // A host must not set their own markup. Ignore any attempt and log it.
+  if (req.body.commissionRate !== undefined &&
+      `${req.body.commissionRate}` !== `${trip.commissionRate ?? ""}`) {
+    console.warn(`[security] host ${host._id} attempted commissionRate change on trip ${trip._id} — ignored`);
+  }
+
   for (const k of HOST_EDITABLE_TRIP_FIELDS) {
     if (req.body[k] !== undefined) trip[k] = req.body[k];
   }
+
+  // Booking options: recompute every option's selling price (TitlePrice) from
+  // its hostB2BPrice at the host's AUTHORITATIVE admin markup — the client's
+  // TitlePrice/markupRate are never trusted. Options without a B2B keep their
+  // stored (legacy) selling price. Order + identity preserved.
+  if (req.body.addsection !== undefined) {
+    const recomputed = recomputeSections(req.body.addsection, host.commissionRate);
+    trip.addsection = JSON.stringify(recomputed);
+  }
+
   trip.Status = "pending"; // resubmission → re-review
   trip.adminFeedback = "";
   trip.enableBooking = false;
