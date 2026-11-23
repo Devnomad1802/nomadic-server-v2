@@ -147,6 +147,14 @@ const hostSchema = mongoose.Schema(
       idProof: String,
       certificates: [String],
       insurance: [String],
+      // Aadhaar card — two independently stored sides, one logical group.
+      // UNLIKE every other document above (which hold a PUBLIC DO Spaces URL),
+      // these hold the PRIVATE object KEY only (ACL: private). The raw image is
+      // never a public URL; it is streamed back through an authenticated proxy
+      // (host: GET /host-portal/me/documents/aadhaar/:side, admin:
+      // GET /host/:id/aadhaar/:side). Govt-ID data — keep it off public buckets.
+      aadhaarFront: String, // private S3 key, e.g. "host-documents-private/aadhaar/<file>"
+      aadhaarBack: String, // private S3 key
     },
 
     // Finance

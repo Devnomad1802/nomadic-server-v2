@@ -1,6 +1,18 @@
 import crypto from "crypto";
 import { Resend } from "resend";
-import { uploadFilesToS3 } from "../middlewares/index.js";
+import {
+  uploadFilesToS3,
+  aadhaarMulter,
+  uploadPrivateToS3,
+  getPrivateObjectStream,
+  deletePrivateFromS3,
+} from "../middlewares/index.js";
+import {
+  sniffImageType,
+  mergeAadhaarDocs,
+  sideField,
+  AADHAAR_SIDES,
+} from "../utils/aadhaarStorage.js";
 import { Host } from "../models/hosts.js";
 import { containsContactInfo, CONTACT_WARNING } from "../utils/contactModeration.js";
 import { validateMessage, serializeEnquiryForParticipant } from "../utils/chatSerialize.js";
@@ -553,6 +565,104 @@ export const uploadMyDocuments = async (req, res) => {
     await host.save();
     return res.status(200).json({ success: true, message: "Document uploaded — pending admin verification.", data: host.documents });
   });
+};
+
+// POST /host-portal/me/documents/aadhaar — host uploads their OWN Aadhaar card
+// as one logical group with two independent sides (aadhaarFront / aadhaarBack).
+// Either side may be sent; the untouched side is preserved. Stored PRIVATE
+// (object key only, never a public URL). Uploading resets verification to
+// pending for admin re-review — never auto-marks KYC verified.
+export const uploadMyAadhaar = async (req, res) => {
+  const host = await requireHost(req, res);
+  if (!host) return;
+
+  aadhaarMulter(req, res, async (err) => {
+    if (err) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Upload failed: " + err.message });
+    }
+    const files = req.files || {};
+    const front = files.aadhaarFront?.[0];
+    const back = files.aadhaarBack?.[0];
+    if (!front && !back) {
+      return res
+        .status(400)
+        .json({ success: false, message: "No Aadhaar image uploaded." });
+    }
+
+    // Validate real image bytes (magic number), not the client's extension/mime.
+    const uploaded = {};
+    const newKeys = [];
+    try {
+      for (const [field, file] of [
+        ["aadhaarFront", front],
+        ["aadhaarBack", back],
+      ]) {
+        if (!file) continue;
+        const mime = sniffImageType(file.buffer);
+        if (!mime) {
+          // Roll back anything already stored this request.
+          await Promise.all(newKeys.map(deletePrivateFromS3));
+          return res.status(400).json({
+            success: false,
+            message: "Aadhaar images must be JPEG, PNG or WebP.",
+          });
+        }
+        const key = await uploadPrivateToS3(file.buffer, mime);
+        newKeys.push(key);
+        uploaded[field] = key;
+      }
+    } catch (e) {
+      await Promise.all(newKeys.map(deletePrivateFromS3));
+      return res
+        .status(500)
+        .json({ success: false, message: "Storage error. Try again." });
+    }
+
+    const { documents, replacedKeys } = mergeAadhaarDocs(host.documents, uploaded);
+    host.documents = documents;
+    host.isVerified = false; // new docs → admin must re-verify
+    if (host.status === "approved") host.status = "pending";
+    await host.save();
+    // Delete superseded private files after the save commits.
+    await Promise.all(replacedKeys.map(deletePrivateFromS3));
+
+    return res.status(200).json({
+      success: true,
+      message: "Aadhaar uploaded — pending admin verification.",
+      data: {
+        aadhaarFront: !!host.documents.aadhaarFront,
+        aadhaarBack: !!host.documents.aadhaarBack,
+        status: host.status,
+      },
+    });
+  });
+};
+
+// GET /host-portal/me/documents/aadhaar/:side — stream the host's OWN Aadhaar
+// side through this authenticated route. The private object is never exposed as
+// a public URL; this is the only read path for the host.
+export const streamMyAadhaar = async (req, res) => {
+  const host = await requireHost(req, res);
+  if (!host) return;
+  const { side } = req.params;
+  if (!AADHAAR_SIDES.includes(side)) {
+    return res.status(400).json({ success: false, message: "Invalid side." });
+  }
+  const key = host.documents?.[sideField(side)];
+  if (!key) {
+    return res.status(404).json({ success: false, message: "Not uploaded." });
+  }
+  try {
+    const { body, contentType, contentLength } = await getPrivateObjectStream(key);
+    res.setHeader("Content-Type", contentType);
+    if (contentLength) res.setHeader("Content-Length", contentLength);
+    res.setHeader("Cache-Control", "private, no-store");
+    body.pipe(res);
+  } catch (e) {
+    return res.status(404).json({ success: false, message: "File unavailable." });
+  }
 };
 
 // GET /host-portal/me/analytics — per-trip views/bookings/revenue + totals.

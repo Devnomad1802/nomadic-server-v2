@@ -23,6 +23,8 @@ import {
   unsubscribePush,
   updateMyTrip,
   uploadMyDocuments,
+  uploadMyAadhaar,
+  streamMyAadhaar,
   activateHost,
 } from "../controllers/hostPortal.js";
 import {
@@ -71,6 +73,9 @@ HostPortalRoutes.get("/me/push/key", auth, catchAsync(getPushKey));
 HostPortalRoutes.post("/me/push/subscribe", auth, catchAsync(subscribePush));
 HostPortalRoutes.post("/me/push/unsubscribe", auth, catchAsync(unsubscribePush));
 HostPortalRoutes.post("/me/documents", auth, catchAsync(uploadMyDocuments));
+// Aadhaar (private, paired front/back). Upload own; stream own side back.
+HostPortalRoutes.post("/me/documents/aadhaar", auth, catchAsync(uploadMyAadhaar));
+HostPortalRoutes.get("/me/documents/aadhaar/:side", auth, catchAsync(streamMyAadhaar));
 HostPortalRoutes.get("/me/analytics", auth, catchAsync(getMyAnalytics));
 HostPortalRoutes.get("/me/notifications", auth, catchAsync(getMyNotifications));
 HostPortalRoutes.get("/me/reviews", auth, catchAsync(getMyReviews));
