@@ -29,8 +29,18 @@ import {
   uploadHostFilesToS3,
   deleteFromS3,
   deleteMultipleFromS3,
+  aadhaarMulter,
+  uploadPrivateToS3,
+  getPrivateObjectStream,
+  deletePrivateFromS3,
 } from "../middlewares/index.js";
 import { sanitizeReels, reelAssetUrls } from "../utils/instagramReels.js";
+import {
+  sniffImageType,
+  mergeAadhaarDocs,
+  sideField,
+  AADHAAR_SIDES,
+} from "../utils/aadhaarStorage.js";
 
 // Field-level, human-readable messages for the required host fields — used to
 // return per-field validation errors the Admin form can highlight.
@@ -2023,4 +2033,90 @@ export const updateHostFlags = async (req, res) => {
     .select("_id hostName showOnWebsite dashboardAccess");
   if (!host) return res.status(404).json({ success: false, message: "Host not found" });
   return res.status(200).json({ success: true, data: host });
+};
+
+// ── Admin Aadhaar handlers ──────────────────────────────────────────────────
+// Aadhaar is stored PRIVATE (object key only). Admin uploads on behalf of a
+// specific host and views either side through an authenticated stream. These
+// are deliberately separate from createHost/updateHost (which run the shared
+// public-read uploadHostFilesToS3 middleware) so the sensitive, private path
+// never touches the public document flow.
+
+// POST /host/:id/aadhaar — admin uploads/replaces a host's Aadhaar side(s).
+export const uploadHostAadhaar = async (req, res) => {
+  const { id } = req.params;
+  const host = await Host.findById(id);
+  if (!host) return res.status(404).json({ success: false, message: "Host not found" });
+
+  aadhaarMulter(req, res, async (err) => {
+    if (err) {
+      return res.status(400).json({ success: false, message: "Upload failed: " + err.message });
+    }
+    const files = req.files || {};
+    const front = files.aadhaarFront?.[0];
+    const back = files.aadhaarBack?.[0];
+    if (!front && !back) {
+      return res.status(400).json({ success: false, message: "No Aadhaar image uploaded." });
+    }
+
+    const uploaded = {};
+    const newKeys = [];
+    try {
+      for (const [field, file] of [
+        ["aadhaarFront", front],
+        ["aadhaarBack", back],
+      ]) {
+        if (!file) continue;
+        const mime = sniffImageType(file.buffer);
+        if (!mime) {
+          await Promise.all(newKeys.map(deletePrivateFromS3));
+          return res.status(400).json({
+            success: false,
+            message: "Aadhaar images must be JPEG, PNG or WebP.",
+          });
+        }
+        const key = await uploadPrivateToS3(file.buffer, mime);
+        newKeys.push(key);
+        uploaded[field] = key;
+      }
+    } catch (e) {
+      await Promise.all(newKeys.map(deletePrivateFromS3));
+      return res.status(500).json({ success: false, message: "Storage error. Try again." });
+    }
+
+    const { documents, replacedKeys } = mergeAadhaarDocs(host.documents, uploaded);
+    host.documents = documents;
+    await host.save();
+    await Promise.all(replacedKeys.map(deletePrivateFromS3));
+
+    return res.status(200).json({
+      success: true,
+      message: "Aadhaar saved.",
+      data: {
+        aadhaarFront: !!host.documents.aadhaarFront,
+        aadhaarBack: !!host.documents.aadhaarBack,
+      },
+    });
+  });
+};
+
+// GET /host/:id/aadhaar/:side — admin streams a host's Aadhaar side.
+export const streamHostAadhaar = async (req, res) => {
+  const { id, side } = req.params;
+  if (!AADHAAR_SIDES.includes(side)) {
+    return res.status(400).json({ success: false, message: "Invalid side." });
+  }
+  const host = await Host.findById(id).select("documents.aadhaarFront documents.aadhaarBack");
+  if (!host) return res.status(404).json({ success: false, message: "Host not found" });
+  const key = host.documents?.[sideField(side)];
+  if (!key) return res.status(404).json({ success: false, message: "Not uploaded." });
+  try {
+    const { body, contentType, contentLength } = await getPrivateObjectStream(key);
+    res.setHeader("Content-Type", contentType);
+    if (contentLength) res.setHeader("Content-Length", contentLength);
+    res.setHeader("Cache-Control", "private, no-store");
+    body.pipe(res);
+  } catch (e) {
+    return res.status(404).json({ success: false, message: "File unavailable." });
+  }
 };

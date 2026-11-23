@@ -6,4 +6,5 @@ export * from "./authGuards.js";
 export * from "./isAdmin.js";
 export * from "./uploadFiles.js";
 export * from "./s3Upload.js";
+export * from "./privateS3.js";
 export * from "./otpService.js";

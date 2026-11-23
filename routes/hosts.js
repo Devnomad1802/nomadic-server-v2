@@ -17,7 +17,9 @@ import {
   deleteHostGalleryImage,
   uploadHostGalleryImage,
   getTripsByHost,
-  updateHostFlags
+  updateHostFlags,
+  uploadHostAadhaar,
+  streamHostAadhaar
 } from "../controllers/hosts.js";
 import { catchAsync, authRole } from "../middlewares/index.js";
 
@@ -39,6 +41,10 @@ hostRoutes.get("/location/:location", catchAsync(getHostsByLocation));
 hostRoutes.patch("/:id/status", ...adminOnly, catchAsync(updateHostStatus));
 hostRoutes.patch("/:id/toggle-status", ...adminOnly, catchAsync(toggleHostStatus));
 hostRoutes.patch("/:id/flags", ...adminOnly, catchAsync(updateHostFlags));
+
+// Aadhaar (private, paired front/back) — admin upload + authenticated stream.
+hostRoutes.post("/:id/aadhaar", ...adminOnly, catchAsync(uploadHostAadhaar));
+hostRoutes.get("/:id/aadhaar/:side", ...adminOnly, catchAsync(streamHostAadhaar));
 
 // Gallery management (Admin-only)
 hostRoutes.post("/:id/gallery", ...adminOnly, catchAsync(addGalleryImages));
