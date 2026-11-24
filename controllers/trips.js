@@ -198,8 +198,14 @@ export const AddTrip = async (req, res) => {
         effectiveStatus = "pending";
       }
 
+      // Booking mode is ADMIN-ONLY. `/addTrip` also accepts Host-role callers
+      // (who submit pending proposals); a host can never set approval mode.
+      const isAdminActor = String(req.user?.role || "").toLowerCase() === "admin";
+      const bookingMode = isAdminActor && req.body.bookingMode === "approval" ? "approval" : "instant";
+
       const addTrip = new Trips({
         title,
+        bookingMode,
         endSelectDate,
         subTitle,
         days,
@@ -476,6 +482,12 @@ export const updateTrip = async (req, res) => {
       if (vendors) updateData.vendors = vendors;
       if (addDays) updateData.addDays = addDays;
       if (enableBooking !== undefined) updateData.enableBooking = enableBooking;
+      // Admin-only booking mode (this route is authRole("Admin")). Validate enum;
+      // ignore anything else. Existing confirmed bookings are unaffected by a
+      // mode change (enforcement is only at NEW order creation).
+      if (req.body.bookingMode !== undefined) {
+        updateData.bookingMode = req.body.bookingMode === "approval" ? "approval" : "instant";
+      }
       if (enableEnquire !== undefined) updateData.enableEnquire = enableEnquire;
       if (bookings) updateData.bookings = bookings;
       if (tripOff !== undefined) updateData.tripOff = Number(tripOff);

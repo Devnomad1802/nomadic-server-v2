@@ -37,6 +37,12 @@ const userSchema = mongoose.Schema({
   ratings: [{ type: String }],
   vendors: [{ type: String }],
   enableBooking: { type: Boolean, default: false },
+  // Booking workflow mode. "instant" = classic Book Now (default for every
+  // existing + new trip). "approval" = traveller must Request to Join and be
+  // approved by the host before a payment order can be created. Admin-only
+  // write; hosts can never set or change it. Acts as the de-facto feature flag:
+  // while every trip is "instant", the entire approval system is inert.
+  bookingMode: { type: String, enum: ["instant", "approval"], default: "instant", index: true },
   // Admin website-visibility switch (mirrors Host.showOnWebsite). Default true
   // so every existing/new trip stays visible unless an admin hides it. When
   // false the trip is excluded from all public surfaces + direct detail.
