@@ -33,6 +33,12 @@ import {
   updateApplication,
 } from "../controllers/hostApplications.js";
 import { getOnboarding, submitOnboarding } from "../controllers/hostOnboarding.js";
+import {
+  hostListJoinRequests,
+  hostApproveJoinRequest,
+  hostDeclineJoinRequest,
+  hostRevokeJoinRequest,
+} from "../controllers/joinRequests.js";
 
 /* Host Portal routes — JWT required on every endpoint. Mounted at
  * /api/host-portal (separate mount → zero interference with the existing
@@ -79,6 +85,13 @@ HostPortalRoutes.get("/me/documents/aadhaar/:side", auth, catchAsync(streamMyAad
 HostPortalRoutes.get("/me/analytics", auth, catchAsync(getMyAnalytics));
 HostPortalRoutes.get("/me/notifications", auth, catchAsync(getMyNotifications));
 HostPortalRoutes.get("/me/reviews", auth, catchAsync(getMyReviews));
+
+// ── Join Requests (host-approval booking). Ownership enforced in the controller
+// (hostId + live-trip re-check). Traveller phone/email are NEVER returned. ──
+HostPortalRoutes.get("/me/join-requests", auth, catchAsync(hostListJoinRequests));
+HostPortalRoutes.post("/me/join-requests/:id/approve", auth, catchAsync(hostApproveJoinRequest));
+HostPortalRoutes.post("/me/join-requests/:id/decline", auth, catchAsync(hostDeclineJoinRequest));
+HostPortalRoutes.post("/me/join-requests/:id/revoke", auth, catchAsync(hostRevokeJoinRequest));
 HostPortalRoutes.post("/me/notifications/read", auth, catchAsync(markMyNotificationsRead));
 
 // Admin-only: approve a host application → create/link login + email credentials.

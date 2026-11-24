@@ -535,6 +535,12 @@ export const updateMyTrip = async (req, res) => {
     console.warn(`[security] host ${host._id} attempted commissionRate change on trip ${trip._id} — ignored`);
   }
 
+  // Booking mode (instant vs host-approval) is ADMIN-ONLY. Never editable here.
+  if (req.body.bookingMode !== undefined &&
+      `${req.body.bookingMode}` !== `${trip.bookingMode ?? "instant"}`) {
+    console.warn(`[security] host ${host._id} attempted bookingMode change on trip ${trip._id} — ignored`);
+  }
+
   for (const k of HOST_EDITABLE_TRIP_FIELDS) {
     if (req.body[k] !== undefined) trip[k] = req.body[k];
   }

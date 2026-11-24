@@ -6,6 +6,7 @@ import { Bookings, Trips, User } from "../models/index.js";
 import { isPartialAllowed, fmtBalanceDueDate } from "../utils/partialPayment.js";
 import { secretForMode, keysForMode } from "../services/paymentAvailability.js";
 import { getBatchOccupancy } from "../services/seatAvailability.js";
+import { requireValidApproval, consumeApprovalForBooking } from "../services/approvalGate.js";
 
 const { RAZORPAY_KEY_SECRET, RAZORPAY_KEY_ID } = process.env;
 
@@ -99,6 +100,22 @@ export const createSecureOrder = async (req, res) => {
     const calc = computeTripAmount(trip, quantities, couponCode);
     if (calc.total <= 0 || calc.travellers <= 0) {
       return res.status(400).json({ error: "Invalid selection — choose at least one traveller." });
+    }
+
+    // ── Host-approval gate ──────────────────────────────────────────────
+    // Approval-mode trips require a valid, in-scope, unexpired, account-bound
+    // approval before any payment order is created. Identity is the JWT user,
+    // never the body. Instant trips skip this entirely (default path unchanged).
+    if (trip.bookingMode === "approval") {
+      const gate = await requireValidApproval({
+        userId,
+        tripId,
+        batchIndex: Number(batchIndex) || 0,
+        partySize: calc.travellers,
+      });
+      if (!gate.ok) {
+        return res.status(gate.status).json({ error: gate.message, code: gate.code });
+      }
     }
 
     // Server-authoritative seat check (client display is not trusted). Capacity
@@ -289,6 +306,28 @@ export const finalizeBookingPaid = async (booking, opts = {}) => {
     }
   }
   await booking.save();
+
+  // Approval-mode: atomically consume the traveller's approval so it can never
+  // be spent on a second booking. Best-effort + idempotent — instant-mode
+  // bookings have no approval row, so this is a harmless no-op for them. A late
+  // capture whose approval expired meanwhile is NOT rejected here: the payment
+  // is already verified and the booking stands; the consume simply finds no live
+  // row and is flagged for ops rather than orphaning funds.
+  try {
+    const consumed = await consumeApprovalForBooking({
+      userId: booking.userId,
+      tripId: booking.tripId,
+      bookingId: booking.bookingId || String(booking._id),
+    });
+    if (!consumed.ok && consumed.code === "NO_LIVE_APPROVAL") {
+      const t = await Trips.findById(booking.tripId).select("bookingMode").lean();
+      if (t?.bookingMode === "approval") {
+        console.warn(`approval consume: no live approval for paid booking ${booking.bookingId} (late capture / already consumed) — flag for ops`);
+      }
+    }
+  } catch (e) {
+    console.error("approval consume failed:", e?.message || e);
+  }
 
   // Confirmation email (best-effort — never blocks or breaks the flow).
   try {
@@ -590,6 +629,20 @@ export const order = async (req, res) => {
         400
       );
     }
+
+    // Defense-in-depth: this legacy endpoint is UNAUTHENTICATED, so it can never
+    // bind a payment to an approved account. Approval-mode trips must go through
+    // the authenticated secure flow. If a tripId is present and resolves to an
+    // approval-mode trip, refuse — approval cannot be enforced here.
+    try {
+      const legacyTripId = req.body?.tripId || req.body?.notes?.tripId;
+      if (legacyTripId) {
+        const t = await Trips.findById(legacyTripId).select("bookingMode").lean();
+        if (t?.bookingMode === "approval") {
+          return res.status(403).json({ error: "This trip requires host approval. Please book from the website.", code: "APPROVAL_REQUIRED_LEGACY" });
+        }
+      }
+    } catch { /* if tripId unresolvable, fall through — amount path unchanged */ }
 
     const options = req.body;
 
