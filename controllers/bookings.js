@@ -256,17 +256,29 @@ export const getAllBookings = async (req, res) => {
   try {
     const search = req.query.search || "";
     const { status } = req.body || {};
+    // Payment-state view (booking lifecycle ≠ payment lifecycle). Opt-in so
+    // other consumers that call this endpoint WITHOUT the param (e.g. the
+    // analytics dashboard, which needs the full set to bucket paid vs abandoned)
+    // keep receiving every row exactly as before:
+    //   "confirmed" → only genuinely paid bookings (full or advance)
+    //   "attempts"  → only unpaid/abandoned checkout-intent rows (paymentStatus
+    //                 "created"), for investigation
+    //   unset / "all" → no payment filter (unchanged legacy behaviour)
+    // The Admin Bookings list passes "confirmed" so an opened-then-dismissed
+    // checkout can never appear as a confirmed/completed booking.
+    const paymentView = req.body?.paymentView || req.query.paymentView || "all";
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
 
-    // Build the filter. A status other than "All" narrows by status. The
-    // email/phone/userName search is applied ONLY when a search term exists —
-    // an empty $regex does NOT match docs missing those fields, which was
-    // silently hiding every booking without a stored contact (unpaid / secure
-    // -flow before confirm backfill) from both the list and analytics.
+    // Build the filter. A status other than "All" narrows by the trip-lifecycle
+    // status. The email/phone/userName search is applied ONLY when a search term
+    // exists — an empty $regex does NOT match docs missing those fields, which
+    // was silently hiding every booking without a stored contact from the list.
     const filter = {};
     if (status && status !== "All") filter.status = status;
+    if (paymentView === "confirmed") filter.paymentStatus = { $in: ["fullPayment", "firstPayment"] };
+    else if (paymentView === "attempts") filter.paymentStatus = { $in: ["created"] };
     if (search) {
       filter.$or = [
         { email: { $regex: search, $options: "i" } },
