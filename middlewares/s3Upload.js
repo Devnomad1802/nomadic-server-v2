@@ -11,9 +11,44 @@ import crypto from "crypto";
 import path from "path";
 import { s3Client, aws_config, S3_CONFIG, generateS3Url, extractS3Key } from "../config/aws.config.js";
 import { compressReelVideo } from "../utils/compressVideo.js";
+import { maybeConvertHeic } from "../utils/convertHeic.js";
+import { ValidationError } from "./throwErrors.js";
 
 // Configure multer for memory storage (we'll upload directly to S3)
 const storage = multer.memoryStorage();
+
+// ── File-type classification (shared by the upload filter and the video router) ──
+// Classify by EXTENSION, then confirm the MIME *family* agrees. The previous
+// filter required the mimetype string to literally contain the extension token,
+// which wrongly rejected real formats whose mimetype doesn't echo the extension:
+//   .mov → video/quicktime, .avi → video/x-msvideo, .mkv → video/x-matroska,
+//   .heic → image/heic. None contain their extension, so every such upload
+// (e.g. an iPhone reel or photo) was rejected and surfaced as a 500.
+// Matching on the MIME family (image/ | video/) accepts them while still
+// blocking a file whose extension and content family disagree (anti-spoofing).
+const IMAGE_EXT = /\.(jpe?g|png|webp|gif|heic|heif)$/i;
+const VIDEO_EXT = /\.(mp4|mov|avi|wmv|flv|webm|mkv|m4v)$/i;
+const DOC_EXT = /\.(pdf|docx?)$/i;
+const DOC_MIMES = new Set([
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+]);
+const extOf = (file) => path.extname(file?.originalname || "").toLowerCase();
+const UNSUPPORTED_FILE_MSG =
+  "Unsupported file type. Please upload a JPG, PNG, HEIC, PDF, MP4 or MOV file.";
+const IMAGE_DOC_ONLY_MSG =
+  "Unsupported file type. Please upload a JPG, PNG, HEIC or PDF file.";
+
+// Returns "image" | "video" | "doc" | null. Exported for unit testing.
+export const classifyUpload = (file) => {
+  const ext = extOf(file);
+  const mime = (file?.mimetype || "").toLowerCase();
+  if (IMAGE_EXT.test(ext) && mime.startsWith("image/")) return "image";
+  if (VIDEO_EXT.test(ext) && mime.startsWith("video/")) return "video";
+  if (DOC_EXT.test(ext) && DOC_MIMES.has(mime)) return "doc";
+  return null;
+};
 
 // Regular upload for small files
 const upload = multer({
@@ -23,21 +58,17 @@ const upload = multer({
     fieldSize: 200 * 1024 * 1024 // 200MB for field data (text fields like overview, Inclusion, etc.)
   },
   fileFilter: (req, file, cb) => {
-    // Use configuration for file type validation
-    const extname = S3_CONFIG.ALLOWED_FILE_TYPES.test(
-      path.extname(file.originalname).toLowerCase()
+    // Images (incl. HEIC/HEIF, converted to JPEG after upload) and documents.
+    // This path is for small files only; videos belong on the reel path
+    // (uploadAdvanced). Rejections are a field-level 400, not a 500.
+    const kind = classifyUpload(file);
+    if (kind === "image" || kind === "doc") return cb(null, true);
+    return cb(
+      new ValidationError(
+        { [file.fieldname || "file"]: IMAGE_DOC_ONLY_MSG },
+        IMAGE_DOC_ONLY_MSG
+      )
     );
-    const mimetype = S3_CONFIG.ALLOWED_FILE_TYPES.test(file.mimetype);
-
-    if (mimetype && extname) {
-      return cb(null, true);
-    } else {
-      cb(
-        new Error(
-          "Invalid file type. Only JPEG, PNG, PDF, DOC, DOCX files are allowed."
-        )
-      );
-    }
   },
 });
 
@@ -49,24 +80,17 @@ const uploadAdvanced = multer({
     fieldSize: 200 * 1024 * 1024 // 200MB for field data (text fields)
   },
   fileFilter: (req, file, cb) => {
-    const extname = path.extname(file.originalname).toLowerCase();
-    const mimetype = file.mimetype;
-
-    // Check for image files
-    const isImage = S3_CONFIG.ALLOWED_FILE_TYPES.test(extname) &&
-      S3_CONFIG.ALLOWED_FILE_TYPES.test(mimetype);
-
-    // Check for video files
-    const isVideo = S3_CONFIG.ALLOWED_VIDEO_TYPES.test(extname) &&
-      S3_CONFIG.ALLOWED_VIDEO_TYPES.test(mimetype);
-
-    if (isImage || isVideo) {
-      return cb(null, true);
-    } else {
-      cb(new Error(
-        "Invalid file type. Only JPEG, PNG, PDF, DOC, DOCX, MP4, AVI, MOV, WMV, FLV, WEBM, MKV, M4V files are allowed."
-      ));
-    }
+    // Accept images (incl. HEIC/HEIF — converted to JPEG after upload), videos
+    // and docs by extension + MIME family. Reject everything else as a
+    // field-level 400 (ValidationError) so the admin sees an actionable message
+    // instead of a generic 500.
+    if (classifyUpload(file)) return cb(null, true);
+    return cb(
+      new ValidationError(
+        { [file.fieldname || "file"]: UNSUPPORTED_FILE_MSG },
+        UNSUPPORTED_FILE_MSG
+      )
+    );
   },
 });
 
@@ -78,17 +102,17 @@ const generateFileName = (originalName) => {
   return `${timestamp}-${randomString}${extension}`;
 };
 
-// Check if file is a video
-const isVideoFile = (file) => {
-  const extname = path.extname(file.originalname).toLowerCase();
-  const mimetype = file.mimetype;
-  return S3_CONFIG.ALLOWED_VIDEO_TYPES.test(extname) &&
-    S3_CONFIG.ALLOWED_VIDEO_TYPES.test(mimetype);
-};
+// Check if file is a video (routes to transcode + multipart upload). Uses the
+// shared classifier so .mov/.avi/.mkv (whose mimetype doesn't echo the
+// extension) are correctly treated as video, not misrouted as an image.
+const isVideoFile = (file) => classifyUpload(file) === "video";
 
-// Upload single file to S3 (regular upload for small files)
+// Upload single file to S3 (regular upload for small files). Every image upload
+// path funnels through here, so HEIC/HEIF → JPEG conversion lives here (no-op
+// for non-HEIC input), giving the public gallery web-displayable images.
 export const uploadToS3 = async (file, folder = "documents") => {
   try {
+    file = await maybeConvertHeic(file);
     const fileName = generateFileName(file.originalname);
     const key = `${folder}/${fileName}`;
 
@@ -262,14 +286,19 @@ export const uploadFilesToS3 = (fields) => {
     const uploadMiddleware = upload.fields(fields);
 
     uploadMiddleware(req, res, async (error) => {
-      if (error instanceof multer.MulterError) {
-        return res
-          .status(400)
-          .json({ error: "Multer error: " + error.message });
-      } else if (error) {
-        return res
-          .status(500)
-          .json({ error: "File upload error: " + error.message });
+      if (error) {
+        // Unsupported-type / size / count problems are the user's to fix → 400.
+        // Only a genuine fault is a 500. Shape matches the central error handler.
+        const status = error.status || (error instanceof multer.MulterError ? 400 : 500);
+        return res.status(status).json({
+          success: false,
+          message: error.message || "Upload problem — please try again.",
+          error: {
+            type: error.type || (status === 400 ? "UPLOAD_ERROR" : "SERVER_ERROR"),
+            message: error.message,
+            fields: error.fields || {},
+          },
+        });
       }
 
       try {
@@ -546,6 +575,7 @@ export const uploadHostFilesToS3 = (fields) => {
                     .then((result) => ({ fieldName, result }))
                 );
               } else {
+                // Images (incl. HEIC → JPEG) are converted inside uploadToS3.
                 uploadPromises.push(
                   smartUploadToS3(file, "hosts").then((result) => ({ fieldName, result }))
                 );
@@ -578,14 +608,19 @@ export const uploadCoverImagesToS3 = (fields) => {
     const uploadMiddleware = uploadAdvanced.any();
 
     uploadMiddleware(req, res, async (error) => {
-      if (error instanceof multer.MulterError) {
-        return res
-          .status(400)
-          .json({ error: "Multer error: " + error.message });
-      } else if (error) {
-        return res
-          .status(500)
-          .json({ error: "File upload error: " + error.message });
+      if (error) {
+        // Unsupported-type / size / count problems are the user's to fix → 400.
+        // Only a genuine fault is a 500. Shape matches the central error handler.
+        const status = error.status || (error instanceof multer.MulterError ? 400 : 500);
+        return res.status(status).json({
+          success: false,
+          message: error.message || "Upload problem — please try again.",
+          error: {
+            type: error.type || (status === 400 ? "UPLOAD_ERROR" : "SERVER_ERROR"),
+            message: error.message,
+            fields: error.fields || {},
+          },
+        });
       }
 
       try {
