@@ -5,7 +5,7 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "test": "node test_examples/invoiceNumber.selfcheck.mjs",
+    "test": "node test_examples/invoiceNumber.selfcheck.mjs && node test_examples/redactTripPricing.selfcheck.mjs",
     "dev": "nodemon index.js"
   },
   "author": "Daanish Ali",
