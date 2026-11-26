@@ -4,7 +4,15 @@ import crypto from "crypto";
 import { BadRequest, CustomError } from "../middlewares/index.js";
 import { Bookings, Trips, User } from "../models/index.js";
 import { isPartialAllowed, fmtBalanceDueDate } from "../utils/partialPayment.js";
-import { secretForMode, keysForMode } from "../services/paymentAvailability.js";
+import { secretForMode, keysForMode, AUTHORIZED_TEST_EMAIL } from "../services/paymentAvailability.js";
+
+// Sandbox isolation: a test (mode:"test") booking must never notify a real
+// customer. Only the authorized tester can create one, so a confirmation email
+// is allowed only when it is addressed to that tester; otherwise it is
+// suppressed (logged). Live bookings are unaffected.
+const mayEmailBooking = (booking, recipient) =>
+  booking?.mode !== "test" ||
+  `${recipient || ""}`.trim().toLowerCase() === AUTHORIZED_TEST_EMAIL;
 import { getBatchOccupancy } from "../services/seatAvailability.js";
 import { requireValidApproval, consumeApprovalForBooking } from "../services/approvalGate.js";
 
@@ -348,7 +356,7 @@ export const finalizeBookingPaid = async (booking, opts = {}) => {
       const dep = cdSnap?.cardDate?.batchDate || booking.batchDate;
       if (remaining > 0) balanceDue = fmtBalanceDueDate(dep);
     } catch { /* noop */ }
-    await sendBookingConfirmationEmail(recipient, {
+    if (mayEmailBooking(booking, recipient)) await sendBookingConfirmationEmail(recipient, {
       customer_name: lead?.name || booking.userName || buyer?.name || "",
       booking_id: booking.bookingId || String(booking._id),
       trip_name: tripDoc?.title || "",
@@ -576,7 +584,7 @@ export const confirmBalancePayment = async (req, res) => {
       // why confirmations were never delivered.
       const buyer = await User.findById(booking.userId).select("name email").lean();
       const recipient = lead?.email || booking.email || buyer?.email;
-      await sendBookingConfirmationEmail(recipient, {
+      if (mayEmailBooking(booking, recipient)) await sendBookingConfirmationEmail(recipient, {
         customer_name: lead?.name || booking.userName || buyer?.name || "",
         booking_id: booking.bookingId || String(booking._id),
         trip_name: tripDoc?.title || "",
