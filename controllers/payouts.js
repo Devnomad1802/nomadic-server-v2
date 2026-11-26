@@ -38,6 +38,18 @@ export const createHostPayout = async (req, res, next) => {
       return next(new BadRequest("Payout already exists for this booking"));
     }
 
+    // Sandbox isolation: a test (mode:"test") booking must never create a real
+    // payout liability.
+    if (booking.mode === "test") {
+      return next(new BadRequest("Sandbox (test) bookings are not eligible for payouts."));
+    }
+
+    // Only genuinely paid bookings may be paid out — never an unpaid/abandoned
+    // ("created") checkout intent.
+    if (!["fullPayment", "firstPayment"].includes(booking.paymentStatus)) {
+      return next(new BadRequest("This booking is not paid and is not eligible for a payout."));
+    }
+
     // Get trip details
     const trip = await Trips.findById(booking.tripId);
     if (!trip) {
