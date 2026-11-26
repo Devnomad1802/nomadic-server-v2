@@ -20,8 +20,9 @@ const invoiceAttachment = async (booking, user) => {
   try {
     if (!booking?.invoiceNumber) return [];
     const { buildInvoicePdf } = await import("../services/invoicePdf.js");
+    const { invoiceFileName } = await import("../utils/invoiceNumber.js");
     const pdf = await buildInvoicePdf(booking, user);
-    return [{ filename: `${booking.invoiceNumber}.pdf`, content: pdf.toString("base64") }];
+    return [{ filename: invoiceFileName(booking.invoiceNumber), content: pdf.toString("base64") }];
   } catch (e) {
     console.error("invoice attachment failed:", e?.message || e);
     return [];
@@ -713,8 +714,8 @@ export const downloadInvoice = async (req, res) => {
       return res.status(400).json({ error: "No invoice — booking is not paid" });
     }
     // Legacy paid bookings predating the invoice system: assign a number now.
+    const { nextInvoiceNumber, invoiceFileName } = await import("../utils/invoiceNumber.js");
     if (!booking.invoiceNumber) {
-      const { nextInvoiceNumber } = await import("../utils/invoiceNumber.js");
       booking.invoiceNumber = await nextInvoiceNumber();
       booking.invoiceDate = new Date();
       await booking.save();
@@ -723,7 +724,7 @@ export const downloadInvoice = async (req, res) => {
     const { buildInvoicePdf } = await import("../services/invoicePdf.js");
     const pdf = await buildInvoicePdf(booking, buyer);
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `attachment; filename="${booking.invoiceNumber}.pdf"`);
+    res.setHeader("Content-Disposition", `attachment; filename="${invoiceFileName(booking.invoiceNumber)}"`);
     return res.send(pdf);
   } catch (e) {
     console.error("downloadInvoice error:", e?.message || e);
