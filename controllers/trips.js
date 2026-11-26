@@ -2,6 +2,38 @@ import { Trips, Categories, Host } from "../models/index.js";
 import { uploadFilesToS3, deleteMultipleFromS3 } from "../middlewares/index.js";
 import { getAllOccupancy, getBatchOccupancy, buildBatchAvailability } from "../services/seatAvailability.js";
 
+// Strip private pricing from a trip's dynamic booking sections before it goes
+// out on a customer-facing (public) endpoint. hostB2BPrice (the host's cost) and
+// markupRate are internal commercial data and must never reach public pages or
+// APIs. The customer selling price (TitlePrice) is preserved. Admin endpoints
+// (e.g. GetAllTrips) are intentionally NOT redacted — the admin needs the cost
+// to edit. Operates on plain objects, so callers use .lean().
+export const redactTripPricing = (trip) => {
+  if (!trip || typeof trip !== "object") return trip;
+  const raw = trip.addsection;
+  if (typeof raw !== "string" || raw === "" || raw === "false") return trip;
+  try {
+    const sections = JSON.parse(raw);
+    if (Array.isArray(sections)) {
+      for (const sec of sections) {
+        if (sec && Array.isArray(sec.array)) {
+          for (const item of sec.array) {
+            if (item && typeof item === "object") {
+              delete item.hostB2BPrice;
+              delete item.markupRate;
+            }
+          }
+        }
+      }
+      trip.addsection = JSON.stringify(sections);
+    }
+  } catch {
+    // Unparseable but contains private keys → drop the field rather than leak.
+    if (/hostB2BPrice|markupRate/.test(raw)) trip.addsection = "[]";
+  }
+  return trip;
+};
+
 // Helper to clean up any files uploaded during the current request
 const cleanupUploadedFiles = async (req) => {
   if (!req.uploadedFiles) return;
@@ -605,7 +637,10 @@ export const GetAllTripsForUser = async (req, res) => {
     // Attach per-batch availability (capacity/occupied/remaining/label) derived
     // from paid bookings — numberOfSeats stays the fixed capacity.
     const occ = await getAllOccupancy();
-    trips.forEach((t) => { t.batchAvailability = buildBatchAvailability(t.numberOfSeats, occ[`${t._id}`] || {}); });
+    trips.forEach((t) => {
+      t.batchAvailability = buildBatchAvailability(t.numberOfSeats, occ[`${t._id}`] || {});
+      redactTripPricing(t); // never expose host B2B cost on the public API
+    });
     return res
       .status(200)
       .json({ message: "All trips retrieved successfully", data: trips });
@@ -619,7 +654,9 @@ export const GetTrendingTrips = async (req, res) => {
   try {
     const trips = await Trips.find({ Trending: true, Status: { $nin: ["pending", "rejected"] }, showOnWebsite: { $ne: false } })
       .populate('host', '-bankName -accountNumber -ifscCode -accountHolderName -panNumber -gstNumber -documents -contact_id -fund_account_id -commissionRate')
-      .sort({ date: -1 });
+      .sort({ date: -1 })
+      .lean();
+    trips.forEach(redactTripPricing); // never expose host B2B cost on the public API
     return res
       .status(200)
       .json({ message: "Trending trips retrieved successfully", data: trips });
@@ -638,6 +675,7 @@ export const GetTripsById = async (req, res) => {
       const occ = await getBatchOccupancy(trips[0]._id);
       trips[0].batchAvailability = buildBatchAvailability(trips[0].numberOfSeats, occ);
     }
+    trips.forEach(redactTripPricing); // never expose host B2B cost on the public API
 
     // Lightweight analytics: count detail views (fire-and-forget, response unchanged)
     Trips.updateOne({ _id: req.body._id }, { $inc: { viewCount: 1 } }).catch(() => {});
@@ -676,7 +714,8 @@ export const GetTripsByCagtegory = async (req, res) => {
     // (exclude host proposals awaiting/denied admin approval)
     const allTrips = await Trips.find({ Status: { $nin: ["pending", "rejected"] }, showOnWebsite: { $ne: false } })
       .populate('host', '-bankName -accountNumber -ifscCode -accountHolderName -panNumber -gstNumber -documents -contact_id -fund_account_id -commissionRate')
-      .sort({ date: -1 });
+      .sort({ date: -1 })
+      .lean();
 
     // Filter trips where any category matches
     const matchingTrips = allTrips.filter((trip) => {
@@ -744,6 +783,7 @@ export const GetTripsByCagtegory = async (req, res) => {
       );
     });
 
+    matchingTrips.forEach(redactTripPricing); // never expose host B2B cost on the public API
     return res.status(200).json({
       message: "Trips retrieved successfully",
       data: matchingTrips,
@@ -769,7 +809,9 @@ export const GetAllTripsWithFilter = async (req, res) => {
       .populate('host', '-bankName -accountNumber -ifscCode -accountHolderName -panNumber -gstNumber -documents -contact_id -fund_account_id -commissionRate')
       .limit(limit)
       .skip(skip)
-      .sort({ date: -1 });
+      .sort({ date: -1 })
+      .lean();
+    trips.forEach(redactTripPricing); // never expose host B2B cost on the public API
     // Get the total count of trips that match the filter
     const totalTrips = await Trips.countDocuments({
       $and: [{ $or: [{ Status: status }, { type: type }] }, approvalGate],
