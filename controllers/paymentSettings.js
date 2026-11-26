@@ -18,6 +18,7 @@ export const getAdminPaymentSettings = async (req, res) => {
   const s = await getPaymentSettings({ fresh: true });
   return res.json({
     paymentMaintenance: s.paymentMaintenance,
+    checkoutDisabled: !!s.checkoutDisabled,
     whatsappNumber: s.whatsappNumber || "",
     noticeHeading: s.noticeHeading,
     noticeBody: s.noticeBody,
@@ -30,7 +31,7 @@ export const getAdminPaymentSettings = async (req, res) => {
 // PUT /api/admin/payment-settings — update toggle/number/copy (admin, audited).
 export const updatePaymentSettings = async (req, res) => {
   const s = await getPaymentSettings({ fresh: true });
-  const { paymentMaintenance, whatsappNumber, noticeHeading, noticeBody, noticeCtaLabel } = req.body || {};
+  const { paymentMaintenance, checkoutDisabled, whatsappNumber, noticeHeading, noticeBody, noticeCtaLabel } = req.body || {};
 
   const changes = [];
 
@@ -41,6 +42,17 @@ export const updatePaymentSettings = async (req, res) => {
       detail: paymentMaintenance
         ? "Payment maintenance turned ON (online payments blocked)"
         : "Payment maintenance turned OFF (live payments may be accepted)",
+    });
+  }
+
+  // Emergency kill-switch (independent of maintenance; blocks live AND sandbox).
+  if (typeof checkoutDisabled === "boolean" && checkoutDisabled !== !!s.checkoutDisabled) {
+    s.checkoutDisabled = checkoutDisabled;
+    changes.push({
+      action: checkoutDisabled ? "checkout_disabled_on" : "checkout_disabled_off",
+      detail: checkoutDisabled
+        ? "EMERGENCY: all checkout disabled (live + sandbox blocked)"
+        : "Emergency checkout block lifted",
     });
   }
 
@@ -76,6 +88,7 @@ export const updatePaymentSettings = async (req, res) => {
   return res.json({
     ok: true,
     paymentMaintenance: s.paymentMaintenance,
+    checkoutDisabled: !!s.checkoutDisabled,
     whatsappNumber: s.whatsappNumber || "",
     noticeHeading: s.noticeHeading,
     noticeBody: s.noticeBody,

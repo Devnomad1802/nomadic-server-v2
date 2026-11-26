@@ -81,6 +81,12 @@ export const resolvePaymentDecision = async (user) => {
     return { allowed: false, mode: "blocked", reason: "SETTINGS_UNAVAILABLE" };
   }
 
+  // Emergency kill-switch (independent of maintenance): blocks EVERY mode,
+  // including the authorized sandbox. Checked first so nothing can start.
+  if (settings.checkoutDisabled === true) {
+    return { allowed: false, mode: "blocked", reason: "CHECKOUT_DISABLED" };
+  }
+
   // Maintenance OFF → ordinary live payments (existing per-request checks still
   // apply downstream). Still require live keys to actually be present.
   if (settings.paymentMaintenance === false) {
@@ -126,6 +132,7 @@ export const keysForMode = (mode) =>
 // Diagnostics for the admin panel — booleans + state only, never secrets.
 export const buildDiagnostics = (settings) => ({
   paymentMaintenance: settings.paymentMaintenance,
+  checkoutDisabled: !!settings.checkoutDisabled,
   updatedAt: settings.updatedAt,
   updatedByEmail: settings.updatedByEmail || "",
   whatsappConfigured: !!(settings.whatsappNumber && settings.whatsappNumber.trim()),

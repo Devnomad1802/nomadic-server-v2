@@ -51,6 +51,7 @@ export const invoiceData = (booking, user) => {
   return {
     pd, items, base, discount, gst, taxable, grand, paid, remaining, isPartial,
     start, end, host,
+    isTest: booking.mode === "test", // sandbox booking → not a valid tax document
     number: booking.invoiceNumber || "PENDING",
     invDate: fmtDate(booking.invoiceDate || booking.DateOfBooking),
     bookingId: booking.bookingId || `${booking._id}`,
@@ -83,11 +84,19 @@ export const buildInvoicePdf = (booking, user) =>
       doc.font("Helvetica-Oblique").fontSize(8.5).fillColor("#C9BFAE").text("The Way to Experience the World", M, 54);
       doc.font("Helvetica").fontSize(7.5).fillColor(FAINT).text(
         "Nomadic Townies · Pune, Maharashtra, India\nsupport@nomadictownies.com · www.nomadictownies.com", M, 72);
-      doc.font("Helvetica-Bold").fontSize(19).fillColor("#F8F4ED").text("TAX INVOICE", 0, 30, { align: "right", width: W - M });
-      const badge = d.isPartial ? "ADVANCE RECEIVED" : "PAID IN FULL";
-      doc.fontSize(8).fillColor(d.isPartial ? "#F0B980" : "#A8E6BC").text(badge, 0, 56, { align: "right", width: W - M });
+      doc.font("Helvetica-Bold").fontSize(19).fillColor("#F8F4ED").text(d.isTest ? "SANDBOX INVOICE" : "TAX INVOICE", 0, 30, { align: "right", width: W - M });
+      const badge = d.isTest ? "TEST — NO PAYMENT TAKEN" : d.isPartial ? "ADVANCE RECEIVED" : "PAID IN FULL";
+      doc.fontSize(8).fillColor(d.isTest ? "#F0B980" : d.isPartial ? "#F0B980" : "#A8E6BC").text(badge, 0, 56, { align: "right", width: W - M });
       doc.font("Helvetica-Bold").fontSize(9.5).fillColor("#D8CFC0").text(d.number, 0, 74, { align: "right", width: W - M });
       doc.font("Helvetica").fontSize(8).fillColor(FAINT).text(`Invoice date: ${d.invDate}`, 0, 88, { align: "right", width: W - M });
+
+      // Sandbox banner: an unmistakable strip so a test invoice can never be
+      // mistaken for a real tax document.
+      if (d.isTest) {
+        doc.rect(0, 118, W, 18).fill("#B3261E");
+        doc.font("Helvetica-Bold").fontSize(9).fillColor("#FFFFFF").text(
+          "SANDBOX / TEST INVOICE — NOT VALID FOR TAX — NO PAYMENT WAS TAKEN", 0, 122, { align: "center", width: W });
+      }
 
       // ── three meta columns ──
       let y = 140;
