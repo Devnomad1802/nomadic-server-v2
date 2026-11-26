@@ -267,6 +267,14 @@ export const getAllBookings = async (req, res) => {
     // The Admin Bookings list passes "confirmed" so an opened-then-dismissed
     // checkout can never appear as a confirmed/completed booking.
     const paymentView = req.body?.paymentView || req.query.paymentView || "all";
+    // Environment view (live vs sandbox). Opt-in, same backward-compat contract
+    // as paymentView — analytics (no param) still sees every row:
+    //   "live"       → real bookings only (mode "live" or legacy/missing mode)
+    //   "test"       → sandbox bookings only (mode "test")
+    //   unset / "all" → no mode filter
+    // The Admin Bookings list passes "live" so sandbox test bookings never mix
+    // into the real view unless the operator explicitly switches to Sandbox.
+    const modeView = req.body?.mode || req.query.mode || "all";
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
@@ -279,6 +287,8 @@ export const getAllBookings = async (req, res) => {
     if (status && status !== "All") filter.status = status;
     if (paymentView === "confirmed") filter.paymentStatus = { $in: ["fullPayment", "firstPayment"] };
     else if (paymentView === "attempts") filter.paymentStatus = { $in: ["created"] };
+    if (modeView === "live") filter.mode = { $ne: "test" }; // live + legacy/missing
+    else if (modeView === "test") filter.mode = "test";
     if (search) {
       filter.$or = [
         { email: { $regex: search, $options: "i" } },

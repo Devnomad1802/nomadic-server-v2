@@ -37,6 +37,12 @@ const paymentSettingsSchema = new mongoose.Schema(
     // enabled after verified live integration.
     paymentMaintenance: { type: Boolean, default: true },
 
+    // Emergency kill-switch, INDEPENDENT of maintenance. When ON it blocks ALL
+    // new checkout — live AND authorized sandbox — regardless of the maintenance
+    // flag or who the user is. For "stop everything now" incidents without having
+    // to reason about maintenance semantics/copy. Default OFF.
+    checkoutDisabled: { type: Boolean, default: false },
+
     // Verified official WhatsApp business number in E.164. Seeded with the
     // owner-provided number on first run; admin-editable in Settings → Payments.
     // If ever cleared, the client shows a safe fallback instead of a broken link.
