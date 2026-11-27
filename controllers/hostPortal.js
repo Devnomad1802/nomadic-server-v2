@@ -17,7 +17,7 @@ import { recomputeSections } from "../utils/tripPricing.js";
 import { Host } from "../models/hosts.js";
 import { containsContactInfo, CONTACT_WARNING } from "../utils/contactModeration.js";
 import { validateMessage, serializeEnquiryForParticipant } from "../utils/chatSerialize.js";
-import { isEarningBooking, earningRevenue } from "../utils/bookingRevenue.js";
+import { isEarningBooking, earningRevenue, isDeadBooking, isRealBooking, paymentStateOf } from "../utils/bookingRevenue.js";
 import jwt from "jsonwebtoken";
 import { addClient, removeClient } from "../services/hostEvents.js";
 import { saveSubscription, removeSubscription, vapidPublicKey } from "../services/webPush.js";
@@ -110,19 +110,43 @@ export const getMyBookings = async (req, res) => {
   const trips = await Trips.find({ host: host._id }).select("_id title");
   const tripIds = trips.map((t) => String(t._id));
   const titleById = Object.fromEntries(trips.map((t) => [String(t._id), t.title]));
-  const bookings = await Bookings.find({ tripId: { $in: tripIds } }).sort({ DateOfBooking: -1 });
-  const safe = bookings.map((b) => ({
-    _id: b._id,
-    bookingId: b.bookingId,
-    tripId: b.tripId,
-    tripTitle: titleById[b.tripId] ?? "—",
-    total: b.total ?? 0,
-    paymentStatus: b.paymentStatus ?? "",
-    status: b.status ?? "",
-    DateOfBooking: b.DateOfBooking,
-    travellerName: b.userName || b.travellers?.find((t) => t.isLead)?.name || b.travellers?.[0]?.name || "Traveller",
-    travellerCount: Array.isArray(b.travellers) && b.travellers.length ? b.travellers.length : 1,
-  }));
+  const rows = await Bookings.find({ tripId: { $in: tripIds } }).sort({ DateOfBooking: -1 });
+
+  // Only REAL bookings reach the host: confirmed (earning) plus previously-
+  // confirmed cancellations/refunds for the Cancelled tab. Pure checkout
+  // attempts (paymentStatus "created"/empty, never paid) are excluded — they
+  // are not bookings and must never inflate counts or revenue. Sandbox/test
+  // bookings are also excluded from the live dashboard.
+  const bookings = rows.filter((b) => isRealBooking(b) && b.mode !== "test");
+
+  const now = Date.now();
+  const safe = bookings.map((b) => {
+    const dead = isDeadBooking(b);
+    // Lifecycle is driven by the TRIP's batch date, not the payment/order date.
+    const batchMs = b.batchDate ? Date.parse(b.batchDate) : NaN;
+    const lifecycle = dead
+      ? "cancelled"
+      : !Number.isNaN(batchMs) && batchMs < now
+        ? "completed"
+        : "upcoming";
+    return {
+      _id: b._id,
+      bookingId: b.bookingId,
+      tripId: b.tripId,
+      tripTitle: titleById[b.tripId] ?? "—",
+      total: b.total ?? 0,
+      // Raw fields kept for backward compatibility (one release); clients should
+      // move to paymentState/lifecycle below, which never guess.
+      paymentStatus: b.paymentStatus ?? "",
+      status: b.status ?? "",
+      paymentState: paymentStateOf(b), // "full" | "partial" | "refunded" | "pending"
+      lifecycle, // "upcoming" | "completed" | "cancelled"
+      batchDate: b.batchDate ?? null,
+      DateOfBooking: b.DateOfBooking,
+      travellerName: b.userName || b.travellers?.find((t) => t.isLead)?.name || b.travellers?.[0]?.name || "Traveller",
+      travellerCount: Array.isArray(b.travellers) && b.travellers.length ? b.travellers.length : 1,
+    };
+  });
   return res.status(200).json({ success: true, data: safe });
 };
 
@@ -772,7 +796,9 @@ export const getMyOverview = async (req, res) => {
         rejected: trips.filter((t) => (t.Status ?? "") === "rejected").length,
       },
       bookings: {
-        total: bookings.length,
+        // Count the SAME eligible set revenue is built from — confirmed, paid,
+        // non-cancelled. Pure checkout attempts never inflate the KPI.
+        total: bookings.filter(isEarningBooking).length,
         grossRevenue,
         // Monthly gross for the revenue chart (last 6 calendar months).
         byMonth: (() => {
@@ -798,8 +824,10 @@ export const getMyOverview = async (req, res) => {
           other: bookings.filter((b) => !["fullPayment", "firstPayment"].includes(b.paymentStatus)).length,
         },
       },
-      // Latest bookings for the Recent Activity table.
+      // Latest bookings for the Recent Activity table — real bookings only
+      // (confirmed or cancelled history), never unpaid checkout attempts.
       recentActivity: bookings
+        .filter(isRealBooking)
         .slice()
         .sort((a, b) => new Date(b.DateOfBooking) - new Date(a.DateOfBooking))
         .slice(0, 5)
@@ -810,7 +838,7 @@ export const getMyOverview = async (req, res) => {
             trip: title,
             date: b.DateOfBooking,
             amount: Number(b.total) || 0,
-            status: b.paymentStatus === "fullPayment" ? "Paid" : b.paymentStatus === "firstPayment" ? "Partial" : "Pending",
+            status: { full: "Paid", partial: "Partial", refunded: "Refunded", pending: "Pending" }[paymentStateOf(b)] || "Pending",
             travellers: Number(b.travellersCount) || 1,
           };
         }),
