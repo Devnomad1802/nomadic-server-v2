@@ -52,6 +52,7 @@ export const invoiceData = (booking, user) => {
     pd, items, base, discount, gst, taxable, grand, paid, remaining, isPartial,
     start, end, host,
     isTest: booking.mode === "test", // sandbox booking → not a valid tax document
+    sourceLabel: booking.source === "imported" ? "Imported Payment" : booking.source === "admin_assisted" ? "Admin Assisted" : "Website",
     number: booking.invoiceNumber || "PENDING",
     invDate: fmtDate(booking.invoiceDate || booking.DateOfBooking),
     bookingId: booking.bookingId || `${booking._id}`,
@@ -107,7 +108,7 @@ export const buildInvoicePdf = (booking, user) =>
         doc.font("Helvetica").fontSize(8.2).fillColor(MUTED).text(lines.join("\n"), x, y + 18, { width: colW, lineGap: 2.5 });
       };
       col(M, "Billed to", [d.custName, d.custEmail, d.custPhone]);
-      col(M + colW + 18, "Booking", [`Booking ID: ${d.bookingId}`, `Booking date: ${d.bookingDate}`, `Status: ${d.isPartial ? "Confirmed (deposit paid)" : "Confirmed"}`, "Source: Website"]);
+      col(M + colW + 18, "Booking", [`Booking ID: ${d.bookingId}`, `Booking date: ${d.bookingDate}`, `Status: ${d.isPartial ? "Confirmed (deposit paid)" : "Confirmed"}`, `Source: ${d.sourceLabel}`]);
       col(M + (colW + 18) * 2, "Payment", ["Mode: Razorpay", `Payment ID: ${d.payId}`, `Order ID: ${d.orderId}`, `Paid on: ${d.invDate}`]);
 
       // ── experience card ──
