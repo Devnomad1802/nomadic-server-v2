@@ -47,6 +47,18 @@ const userSchema = mongoose.Schema({
         type: Date,
         default: Date.now,
       },
+      // ── Email notification status (additive; tracked SEPARATELY from chat
+      // state). Recipient stored MASKED. status: sent|failed|unavailable|
+      // unknown|delivered|bounced. ──
+      notify: {
+        to: { type: String },        // recipient role: "host" | "user"
+        email: { type: String },     // MASKED recipient (never the raw address)
+        status: { type: String },
+        providerId: { type: String },
+        attempts: { type: Number, default: 0 },
+        error: { type: String },
+        at: { type: Date },
+      },
       // ── Edit / delete audit trail (additive; legacy messages have none) ──
       edited: { type: Boolean, default: false },
       editedAt: { type: Date, default: null },

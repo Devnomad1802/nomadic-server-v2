@@ -21,6 +21,7 @@ import { isEarningBooking, earningRevenue, isDeadBooking, isRealBooking, payment
 import jwt from "jsonwebtoken";
 import { addClient, removeClient } from "../services/hostEvents.js";
 import { saveSubscription, removeSubscription, vapidPublicKey } from "../services/webPush.js";
+import { notifyNewChatMessage } from "../services/chatNotifications.js";
 import { User } from "../models/user.js";
 import { Trips } from "../models/trips.js";
 import { Bookings } from "../models/bookings.js";
@@ -447,6 +448,9 @@ export const replyToEnquiry = async (req, res) => {
   enquiry.status = "Replied";
   enquiry.userUnread = (enquiry.userUnread || 0) + 1;
   await enquiry.save();
+  // Email the customer (fire-and-forget; never blocks or breaks the reply).
+  const messageId = enquiry.chat[enquiry.chat.length - 1]?._id;
+  if (messageId) notifyNewChatMessage({ enquiry, messageId, toRole: "user" }).catch(() => {});
   return res.status(200).json({ success: true, data: serializeEnquiryForParticipant(enquiry) });
 };
 
