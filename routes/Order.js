@@ -3,6 +3,7 @@ import { catchAsync } from "../middlewares/index.js";
 import { paymentGate } from "../middlewares/paymentGate.js";
 import { order, validate, createSecureOrder, confirmBooking, createBalanceOrder, confirmBalancePayment, downloadInvoice, reconcilePayment } from "../controllers/Order.js";
 import { previewImportPayment, confirmImportPayment } from "../controllers/importPayment.js";
+import { createAssistedLink, cancelAssistedLink, getAssistedLinkStatus } from "../controllers/assistedBooking.js";
 import { isAdmin } from "../middlewares/isAdmin.js";
 import passport from "passport";
 
@@ -35,6 +36,14 @@ OrderRoute.get("/invoice/:bookingId", auth, catchAsync(downloadInvoice));
 // resolve an EXISTING payment and never initiate one.
 OrderRoute.post("/admin/import-payment/preview", isAdmin, catchAsync(previewImportPayment));
 OrderRoute.post("/admin/import-payment/confirm", isAdmin, catchAsync(confirmImportPayment));
+
+// ── Assisted bookings via Razorpay Payment Links (Admin-only) — directive §3/§4 ──
+// Create/cancel a payment link for a server-priced booking intent; poll its
+// authoritative status. Confirmation itself happens via the signed webhook
+// (routes/paymentWebhook.js) or the status poll's fail-safe — never here.
+OrderRoute.post("/admin/assisted-booking/link", isAdmin, catchAsync(createAssistedLink));
+OrderRoute.post("/admin/assisted-booking/cancel", isAdmin, catchAsync(cancelAssistedLink));
+OrderRoute.get("/admin/assisted-booking/status/:bookingId", isAdmin, catchAsync(getAssistedLinkStatus));
 
 // ── Legacy endpoints (kept temporarily for the currently-deployed client). ──
 // TODO: remove once the new client is live everywhere.
