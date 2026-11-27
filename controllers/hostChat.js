@@ -3,6 +3,16 @@ import { containsContactInfo, CONTACT_WARNING } from "../utils/contactModeration
 import { validateMessage, serializeChatForParticipant, serializeEnquiryForParticipant, orderChatAsc } from "../utils/chatSerialize.js";
 import { emitToHost } from "../services/hostEvents.js";
 import { sendPushToHost } from "../services/webPush.js";
+import { notifyNewChatMessage } from "../services/chatNotifications.js";
+
+// Email the recipient of a newly-stored message. Fire-and-forget: a mail
+// failure must never block or break the chat reply path.
+const lastMsgId = (convo) => convo?.chat?.[convo.chat.length - 1]?._id;
+const emailNewMessage = (convo, toRole) => {
+  const messageId = lastMsgId(convo);
+  if (!messageId) return;
+  notifyNewChatMessage({ enquiry: convo, messageId, toRole }).catch(() => {});
+};
 
 // Notify a host of a new customer message: realtime SSE + web push.
 // Payload carries NO message body or customer PII — only an opaque deep link.
@@ -84,6 +94,7 @@ export const startHostChat = async (req, res) => {
     await convo.save();
   }
   notifyHostMessage(hostId, convo._id, convo.hostUnread);
+  emailNewMessage(convo, "host");
   return res.status(201).json({ success: true, data: serializeEnquiryForParticipant(convo) });
 };
 
@@ -131,6 +142,7 @@ export const sendHostChatMessage = async (req, res) => {
   convo.hostUnread = (convo.hostUnread || 0) + 1;
   await convo.save();
   notifyHostMessage(convo.hostId, convo._id, convo.hostUnread);
+  emailNewMessage(convo, "host");
   return res.status(200).json({ success: true, data: serializeEnquiryForParticipant(convo) });
 };
 
