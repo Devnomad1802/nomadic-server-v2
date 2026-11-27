@@ -42,9 +42,51 @@ export const paymentStateOf = (b) => {
   return "pending";
 };
 
-// Sum of `total` across earning bookings only.
+// Sum of `total` (CUSTOMER RETAIL) across earning bookings only. This is NOT
+// host revenue — it is what the customer paid. Host-facing surfaces must use
+// hostEarningOf/hostEarningTotal instead; retail stays Admin-only.
 export const earningRevenue = (bookings = []) =>
   bookings.filter(isEarningBooking).reduce((s, b) => s + (Number(b.total) || 0), 0);
+
+// ─────────────────────────────────────────────────────────────
+// HOST revenue = the agreed B2B entitlement, taken from the IMMUTABLE booking
+// snapshot (never the retail price, never reverse-computed from it). Each
+// selected option in cardData.cardSectionData carries hostB2BPrice × quantity.
+//
+//   hostEarningOf(booking) → integer rupees, or `null` when the snapshot does
+//     not carry B2B for every selected option (legacy booking). `null` means
+//     "entitlement unknown → Admin reconciliation" — callers must NOT treat it
+//     as 0 and must NOT fall back to retail.
+// ─────────────────────────────────────────────────────────────
+export const hostEarningOf = (booking) => {
+  let cd;
+  try { cd = JSON.parse(booking?.cardData || "{}"); } catch { return null; }
+  const items = Array.isArray(cd.cardSectionData) ? cd.cardSectionData : [];
+  if (items.length === 0) return null; // no snapshot → unknown, not 0
+  let sum = 0;
+  for (const it of items) {
+    const b2b = Number(it?.hostB2BPrice);
+    const qty = Number(it?.quantity) || 0;
+    if (!Number.isFinite(b2b) || b2b <= 0) return null; // any option missing B2B → whole booking unknown
+    sum += b2b * qty;
+  }
+  return Math.round(sum);
+};
+
+// Host B2B totals across EARNING bookings only. Returns the summed entitlement
+// for rows whose B2B is known, plus the count of earning rows whose B2B is not
+// in the snapshot (shown to the host as "pending reconciliation", never money).
+export const hostEarningTotal = (bookings = []) => {
+  let earning = 0;
+  let unreconciled = 0;
+  for (const b of bookings) {
+    if (!isEarningBooking(b)) continue;
+    const e = hostEarningOf(b);
+    if (e === null) { unreconciled += 1; continue; }
+    earning += e;
+  }
+  return { earning, unreconciled };
+};
 
 // ─────────────────────────────────────────────────────────────
 // Platform earned commission (Nomadic Townies' own revenue), in PAISE.

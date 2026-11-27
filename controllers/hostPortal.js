@@ -17,7 +17,7 @@ import { recomputeSections } from "../utils/tripPricing.js";
 import { Host } from "../models/hosts.js";
 import { containsContactInfo, CONTACT_WARNING } from "../utils/contactModeration.js";
 import { validateMessage, serializeEnquiryForParticipant } from "../utils/chatSerialize.js";
-import { isEarningBooking, earningRevenue, isDeadBooking, isRealBooking, paymentStateOf } from "../utils/bookingRevenue.js";
+import { isEarningBooking, isDeadBooking, isRealBooking, paymentStateOf, hostEarningOf, hostEarningTotal } from "../utils/bookingRevenue.js";
 import jwt from "jsonwebtoken";
 import { addClient, removeClient } from "../services/hostEvents.js";
 import { saveSubscription, removeSubscription, vapidPublicKey } from "../services/webPush.js";
@@ -130,16 +130,19 @@ export const getMyBookings = async (req, res) => {
       : !Number.isNaN(batchMs) && batchMs < now
         ? "completed"
         : "upcoming";
+    const hostEarning = hostEarningOf(b); // null = B2B not in snapshot → Admin reconciliation
     return {
       _id: b._id,
-      bookingId: b.bookingId,
+      // Stable NT reference — NOT the Razorpay order/payment id (that stays
+      // Admin-only). bookingId kept as the NT id for one backward-compat release.
+      reference: String(b._id),
+      bookingId: String(b._id),
       tripId: b.tripId,
       tripTitle: titleById[b.tripId] ?? "—",
-      total: b.total ?? 0,
-      // Raw fields kept for backward compatibility (one release); clients should
-      // move to paymentState/lifecycle below, which never guess.
-      paymentStatus: b.paymentStatus ?? "",
-      status: b.status ?? "",
+      // HOST money = B2B entitlement only. Customer retail (`total`) is NOT
+      // exposed to the host. null → "Pending reconciliation", never 0/retail.
+      hostEarning,
+      hostEarningKnown: hostEarning !== null,
       paymentState: paymentStateOf(b), // "full" | "partial" | "refunded" | "pending"
       lifecycle, // "upcoming" | "completed" | "cancelled"
       batchDate: b.batchDate ?? null,
@@ -728,12 +731,13 @@ export const getMyAnalytics = async (req, res) => {
 
   const trips = await Trips.find({ host: host._id }).select("_id title viewCount Status enableBooking");
   const tripIds = trips.map((t) => String(t._id));
-  const bookings = await Bookings.find({ tripId: { $in: tripIds } }).select("tripId total paymentStatus status");
+  const bookings = await Bookings.find({ tripId: { $in: tripIds } }).select("tripId paymentStatus status cardData");
 
   const byTrip = trips.map((t) => {
     // Count only paid, non-cancelled bookings — no pending/refunded/failed inflation.
     const b = bookings.filter((x) => x.tripId === String(t._id) && isEarningBooking(x));
-    const revenue = b.reduce((s, x) => s + (Number(x.total) || 0), 0);
+    // Revenue = host B2B entitlement (snapshot), NOT customer retail.
+    const { earning: revenue, unreconciled } = hostEarningTotal(b);
     const views = Number(t.viewCount) || 0;
     return {
       tripId: t._id,
@@ -741,7 +745,9 @@ export const getMyAnalytics = async (req, res) => {
       views,
       bookings: b.length,
       revenue,
-      conversion: views > 0 ? Number(((b.length / views) * 100).toFixed(1)) : 0,
+      unreconciled, // earning bookings whose B2B isn't in the snapshot
+      // N/A (null) when there are no views — never a misleading 0%.
+      conversion: views > 0 ? Number(((b.length / views) * 100).toFixed(1)) : null,
     };
   });
 
@@ -759,7 +765,7 @@ export const getMyAnalytics = async (req, res) => {
     data: {
       totals: {
         ...totals,
-        conversion: totals.views > 0 ? Number(((totals.bookings / totals.views) * 100).toFixed(1)) : 0,
+        conversion: totals.views > 0 ? Number(((totals.bookings / totals.views) * 100).toFixed(1)) : null,
       },
       trips: byTrip.sort((a, b) => b.views - a.views),
     },
@@ -777,12 +783,14 @@ export const getMyOverview = async (req, res) => {
     (t.Status ?? "") === "approved" || (!t.Status && t.enableBooking);
 
   const [bookings, payouts] = await Promise.all([
-    Bookings.find({ tripId: { $in: tripIds } }).select("total paymentStatus status DateOfBooking paymentDetail travellersCount"),
+    Bookings.find({ tripId: { $in: tripIds } }).select("paymentStatus status DateOfBooking paymentDetail travellersCount cardData"),
     Payout.find({ host: host._id }).select("amount status createdAt"),
   ]);
 
-  // Revenue counts only paid, non-cancelled bookings (never pending/refunded/failed).
-  const grossRevenue = earningRevenue(bookings);
+  // HOST revenue = B2B entitlement from the booking snapshot (NOT customer
+  // retail). Earning bookings whose B2B isn't in the snapshot are surfaced as
+  // `unreconciled` (pending Admin reconciliation), never counted as money.
+  const { earning: grossRevenue, unreconciled: unreconciledCount } = hostEarningTotal(bookings);
   const paidOut = payouts
     .filter((p) => ["processed", "completed", "paid"].includes(String(p.status).toLowerCase()))
     .reduce((s, p) => s + (Number(p.amount) || 0), 0);
@@ -803,8 +811,9 @@ export const getMyOverview = async (req, res) => {
         // Count the SAME eligible set revenue is built from — confirmed, paid,
         // non-cancelled. Pure checkout attempts never inflate the KPI.
         total: bookings.filter(isEarningBooking).length,
-        grossRevenue,
-        // Monthly gross for the revenue chart (last 6 calendar months).
+        grossRevenue, // host B2B entitlement
+        unreconciled: unreconciledCount, // earning rows with no B2B snapshot
+        // Monthly HOST B2B earnings for the revenue chart (last 6 months).
         byMonth: (() => {
           const out = [];
           const now = new Date();
@@ -817,15 +826,17 @@ export const getMyOverview = async (req, res) => {
                 const bd = new Date(b.DateOfBooking);
                 return !isNaN(bd) && bd.getFullYear() === d.getFullYear() && bd.getMonth() === d.getMonth();
               })
-              .reduce((s, b) => s + (Number(b.total) || 0), 0);
+              .reduce((s, b) => s + (hostEarningOf(b) || 0), 0); // B2B, not retail
             out.push({ month: label, value });
           }
           return out;
         })(),
+        // Status breakdown over REAL bookings only (attempts excluded), so the
+        // "cancelled" slice reflects actual cancellations — not unpaid attempts.
         byStatus: {
-          full: bookings.filter((b) => b.paymentStatus === "fullPayment").length,
-          partial: bookings.filter((b) => b.paymentStatus === "firstPayment").length,
-          other: bookings.filter((b) => !["fullPayment", "firstPayment"].includes(b.paymentStatus)).length,
+          full: bookings.filter((b) => isEarningBooking(b) && b.paymentStatus === "fullPayment").length,
+          partial: bookings.filter((b) => isEarningBooking(b) && b.paymentStatus === "firstPayment").length,
+          cancelled: bookings.filter(isDeadBooking).length,
         },
       },
       // Latest bookings for the Recent Activity table — real bookings only
