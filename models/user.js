@@ -19,6 +19,16 @@ const userSchema = mongoose.Schema({
   profileImage: String,
   bookmarks: [{ type: Sche.Types.ObjectId, ref: "Trips" }],
   googleId: String,
+
+  // ── Admin-assisted customer provenance (additive, back-compat) ──
+  // How this profile was created. Legacy/self-signup rows have no value.
+  // "admin_assisted" = created by staff for an assisted booking; such a
+  // profile is pending-activation (isVerified stays false — admin entering an
+  // email does NOT verify ownership) and has no password set here.
+  createdVia: { type: String, required: false },
+  createdBy: { type: Sche.Types.ObjectId, ref: "User", required: false }, // admin actor (audit)
+  consentGiven: { type: Boolean, required: false }, // admin attests the customer authorised this
+  consentAt: { type: Date, required: false },
 });
 userSchema.pre("save", function () {
   if (this.isModified("password")) {

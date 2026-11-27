@@ -24,6 +24,7 @@ import {
   sendEmailOtpHandler,
   verifyEmailOtpHandler,
 } from "../controllers/users.js";
+import { createCustomer } from "../controllers/customers.js";
 import { catchAsync } from "../middlewares/index.js";
 import { isAdmin } from "../middlewares/isAdmin.js";
 
@@ -53,6 +54,10 @@ authRoutes.post(
 );
 authRoutes.get("/forgotPassword/:email", catchAsync(forgetPassword));
 authRoutes.post("/changepassword", catchAsync(changePassword));
+
+// Admin-only: create a minimal pending-activation customer (assisted booking).
+// No password set, not marked verified; consent + admin actor recorded.
+authRoutes.post("/admin/customers", isAdmin, catchAsync(createCustomer));
 
 // Get all Users
 // Admin-only: this returns user PII (name/email/phone); was PUBLIC.
