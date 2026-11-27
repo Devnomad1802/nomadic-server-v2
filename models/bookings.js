@@ -90,6 +90,8 @@ const userSchema = mongoose.Schema({
   // generated server-side so status/reconcile never guesses.
   paymentLinkId: { type: String, required: false },
   paymentLinkShortUrl: { type: String, required: false },
+  // Razorpay payment-link lifecycle: created | paid | partially_paid | cancelled | expired.
+  paymentLinkStatus: { type: String, required: false },
 });
 
 userSchema.index({ razorpayOrderId: 1 }, { sparse: true });

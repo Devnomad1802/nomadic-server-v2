@@ -28,6 +28,7 @@ import HostPortalRoutes from "./routes/hostPortal.js";
 import JoinRequestRoutes from "./routes/joinRequests.js";
 import HostChatRoutes from "./routes/hostChat.js";
 import PayoutRoutes from "./routes/payouts.js";
+import PaymentWebhookRoute from "./routes/paymentWebhook.js";
 import UserReviewsRoutes from "./routes/UserReviews.js";
 import SeoRoutes from "./routes/Seo.js";
 import analyticsRoutes from "./routes/analytics.js";
@@ -54,6 +55,14 @@ const corsAllow = (origin, cb) => {
   return ok ? cb(null, true) : cb(new Error("Not allowed by CORS"));
 };
 app.use(cors({ origin: corsAllow, credentials: true }));
+
+// ── Razorpay PAYMENT webhook — MUST precede the JSON parser & sanitiser ──
+// This route needs the RAW request body to verify the HMAC signature over the
+// exact bytes Razorpay signed. Mounting it here keeps express.json() and
+// mongoSanitize() from mutating the body first. It handles only
+// POST /api/razorpay/payment-webhook; all other /api/razorpay/* paths fall
+// through to the JSON-parsed PayoutRoutes mounted later.
+app.use("/api/razorpay", PaymentWebhookRoute);
 
 // Body limits: generous for base64/image JSON, but not the old 500MB DoS surface.
 // Large binary uploads go through multer (multipart), unaffected by this limit.
