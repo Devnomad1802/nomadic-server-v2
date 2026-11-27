@@ -124,6 +124,27 @@ export const getMyHostChats = async (req, res) => {
   return res.status(200).json({ success: true, data });
 };
 
+// Display cap for the unread badge: never render a raw huge number.
+// Pure (exported for tests). 0 → "0" (caller hides the badge at 0).
+export const capUnreadDisplay = (n) => {
+  const v = Math.max(0, Math.floor(Number(n) || 0));
+  return v > 99 ? "99+" : String(v);
+};
+
+// GET /host-chat/unread-count  (user JWT) — SERVER-derived total unread across
+// all of the logged-in traveller's threads, for the nav badge. One indexed
+// aggregate; never returns another user's data (match is the session userId).
+export const getUnreadCount = async (req, res) => {
+  const userId = req.user?._id;
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  const agg = await Enquire.aggregate([
+    { $match: { userId: String(userId) } },
+    { $group: { _id: null, total: { $sum: { $ifNull: ["$userUnread", 0] } } } },
+  ]);
+  const count = agg?.[0]?.total || 0;
+  return res.status(200).json({ success: true, count, display: capUnreadDisplay(count) });
+};
+
 // POST /host-chat/:id/message  { message }  (user JWT)
 export const sendHostChatMessage = async (req, res) => {
   const userId = req.user?._id;

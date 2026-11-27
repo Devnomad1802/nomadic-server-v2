@@ -5,6 +5,7 @@ import { isAdmin } from "../middlewares/isAdmin.js";
 import {
   startHostChat,
   getMyHostChats,
+  getUnreadCount,
   sendHostChatMessage,
   markHostChatRead,
   getAdminConversations,
@@ -17,6 +18,7 @@ const auth = passport.authenticate("jwt", { session: false });
 // Traveller side of the platform chat (host side lives in host-portal).
 HostChatRoutes.post("/start", auth, catchAsync(startHostChat));
 HostChatRoutes.get("/mine", auth, catchAsync(getMyHostChats));
+HostChatRoutes.get("/unread-count", auth, catchAsync(getUnreadCount));
 HostChatRoutes.post("/:id/message", auth, catchAsync(sendHostChatMessage));
 HostChatRoutes.post("/:id/read", auth, catchAsync(markHostChatRead));
 

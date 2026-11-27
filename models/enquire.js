@@ -80,4 +80,8 @@ const userSchema = mongoose.Schema({
   ],
 });
 
+// Traveller inbox + unread badge query is `{ userId }`; index it so the
+// aggregate and conversation list stay fast as threads grow.
+userSchema.index({ userId: 1 });
+
 export const Enquire = mongoose.model("Enquire", userSchema);
