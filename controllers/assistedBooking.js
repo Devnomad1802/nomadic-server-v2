@@ -15,7 +15,7 @@ import { Bookings, Trips, User } from "../models/index.js";
 import { keysForMode } from "../services/paymentAvailability.js";
 import { isPartialAllowed } from "../utils/partialPayment.js";
 import { requireValidApproval } from "../services/approvalGate.js";
-import { computeTripAmount, finalizeBookingPaid } from "./Order.js";
+import { computeTripAmount, finalizeBookingPaid, buildBookingSnapshots } from "./Order.js";
 
 const liveRazorpay = () => {
   const keys = keysForMode("live");
@@ -51,7 +51,7 @@ export const createAssistedLink = async (req, res) => {
 
     const [customer, trip] = await Promise.all([
       User.findById(userId).select("name email phone").lean(),
-      Trips.findById(tripId).lean(),
+      Trips.findById(tripId).populate("host").lean(), // host needed for the invoice snapshot
     ]);
     if (!customer) return res.status(404).json({ error: "Customer not found" });
     if (!trip) return res.status(404).json({ error: "Trip not found" });
@@ -88,6 +88,14 @@ export const createAssistedLink = async (req, res) => {
     });
     if (booking?.paymentLinkId) await safeCancelLink(rzp, booking.paymentLinkId);
 
+    // Same denormalized snapshots a website booking carries, so once the link is
+    // paid the booking renders real trip/traveller/batch data and invoices with
+    // real line items (not the blank/zeroed import incident).
+    const { paymentDetail, cardData } = buildBookingSnapshots(trip, calc, {
+      batchIndex: bIdx,
+      partialAllowed,
+    });
+
     const fields = {
       userId: `${userId}`, tripId: `${tripId}`, paymentStatus: "created",
       mode: "live", source: "admin_assisted", assistedBy: adminId,
@@ -95,6 +103,7 @@ export const createAssistedLink = async (req, res) => {
       coupenDiscount: `${calc.discount}`, couponCode: calc.validCoupon ? couponCode : "",
       batchIndex: bIdx, travellersCount: calc.travellers, paymentType: finalType,
       batchDate: batchDate ? `${batchDate}` : undefined,
+      paymentDetail: JSON.stringify(paymentDetail), cardData: JSON.stringify(cardData),
       userName: customer.name || "", email: customer.email || "", phone: customer.phone || "",
     };
     if (booking) { Object.assign(booking, fields); await booking.save(); }

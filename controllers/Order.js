@@ -88,6 +88,87 @@ export const computeTripAmount = (trip, quantities, couponCode) => {
   return { base, discount: Math.round(discount), gst: Math.round(gst), total, travellers, validCoupon: valid, lineItems };
 };
 
+// Build the TWO denormalized snapshots every booking must carry. Admin list,
+// booking detail, Host V2 and the invoice PDF ALL read these — never the live
+// trip ref — so an imported / admin-assisted booking that omits them renders
+// blank (trip name, travellers, days, batch date) and invoices with zeroed line
+// items. This is the SINGLE source of truth; website checkout, import and
+// assisted-link all call it so the three paths stay identical (directive §3).
+//   trip   : trip doc, host POPULATED (object) for the host block
+//   calc   : computeTripAmount() result (lineItems, gst, travellers)
+//   opts   : { batchIndex, partialAllowed } — partialAllowed is the server's
+//            per-batch verdict; defaults to the trip flag when not supplied.
+export const buildBookingSnapshots = (trip, calc, { batchIndex = 0, partialAllowed } = {}) => {
+  let batchDate;
+  let endSelectDate;
+  let numberOfDays;
+  try {
+    const i = Number(batchIndex) || 0;
+    const sd = JSON.parse(trip?.selectDate || "[]");
+    const ed = JSON.parse(trip?.endSelectDate || "[]");
+    const nd = JSON.parse(trip?.numberOfDays || "[]");
+    batchDate = sd?.[i]?.BatchDate;
+    endSelectDate = ed?.[i]?.EndBatchDate;
+    numberOfDays = nd?.[i]?.selectDays;
+  } catch { /* noop */ }
+
+  const cardData = {
+    numberOfTravelers: calc.travellers,
+    cardDate: { batchDate, endSelectDate, numberOfDays },
+    gstTax: calc.gst,
+    cardSectionData: calc.lineItems,
+  };
+  const h = trip?.host && typeof trip.host === "object" ? trip.host : null;
+  const paymentDetail = {
+    _id: `${trip._id}`,
+    title: trip.title,
+    location: trip.location,
+    price: trip.price,
+    days: trip.days,
+    nights: trip.nights,
+    pickUp: trip.pickUp,
+    dropOff: trip.dropOff,
+    firstBookingPrice: trip.firstBookingPrice,
+    partialPaymentEnabled: partialAllowed === undefined ? !!trip.partialPaymentEnabled : !!partialAllowed,
+    bannerImage: trip.bannerImage || trip.cardImage || null,
+    seoSlug: trip.seoSlug || "",
+    host: h
+      ? {
+          _id: `${h._id}`,
+          name: h.hostTitle || h.hostName || "",
+          bio: h.shortBio || h.tagline || "",
+          location: h.hqLocation || h.location || "",
+          verified: !!h.isVerified,
+          logo: h.brandingLogo || null,
+        }
+      : null,
+  };
+  return { paymentDetail, cardData, batchDate, endSelectDate, numberOfDays };
+};
+
+// Invoice issuance gate (directive §4: "Block invoice issuance on mismatch,
+// missing required fields"). PURE — parses the saved snapshot and checks the
+// line items reconcile with the grand total. A booking with no line items (the
+// import incident) or a subtotal that does not add up must NOT consume an FY
+// invoice number. Returns { ok, reason }.
+export const isInvoiceIssuable = (booking) => {
+  let cd;
+  try { cd = JSON.parse(booking?.cardData || "{}"); } catch { cd = {}; }
+  const items = Array.isArray(cd.cardSectionData) ? cd.cardSectionData : [];
+  if (items.length === 0) return { ok: false, reason: "no line items in booking snapshot" };
+  const base = items.reduce((s, it) => s + Number(it.TitlePrice || 0) * Number(it.quantity || 0), 0);
+  if (base <= 0) return { ok: false, reason: "zero taxable base" };
+  const discount = Number(booking.coupenDiscount || 0);
+  const gst = Number(cd.gstTax || 0);
+  const reconstructed = Math.round(base - discount + gst);
+  const grand = Math.round(Number(booking.fullTripAmount || 0));
+  if (grand <= 0) return { ok: false, reason: "no grand total" };
+  if (reconstructed !== grand) {
+    return { ok: false, reason: `line items (${reconstructed}) do not reconcile with grand total (${grand})` };
+  }
+  return { ok: true };
+};
+
 // Step 1 — create a Razorpay order for a server-computed amount, and store a
 // PENDING booking keyed by the order id. Browser sends WHAT they want, not how
 // much it costs.
@@ -182,37 +263,11 @@ export const createSecureOrder = async (req, res) => {
     });
     if (!order?.id) return res.status(502).json({ error: "Could not create payment order" });
 
-    const cardData = {
-      numberOfTravelers: calc.travellers,
-      cardDate: { batchDate, endSelectDate, numberOfDays },
-      gstTax: calc.gst,
-      cardSectionData: calc.lineItems,
-    };
-    const h = trip.host && typeof trip.host === "object" ? trip.host : null;
-    const paymentDetail = {
-      _id: `${trip._id}`,
-      title: trip.title,
-      location: trip.location,
-      price: trip.price,
-      days: trip.days,
-      nights: trip.nights,
-      pickUp: trip.pickUp,
-      dropOff: trip.dropOff,
-      firstBookingPrice: trip.firstBookingPrice,
-      partialPaymentEnabled: partialAllowed, // server's verdict for this batch
-      bannerImage: trip.bannerImage || trip.cardImage || null,
-      seoSlug: trip.seoSlug || "",
-      host: h
-        ? {
-            _id: `${h._id}`,
-            name: h.hostTitle || h.hostName || "",
-            bio: h.shortBio || h.tagline || "",
-            location: h.hqLocation || h.location || "",
-            verified: !!h.isVerified,
-            logo: h.brandingLogo || null,
-          }
-        : null,
-    };
+    // Snapshot via the shared builder so website / import / assisted stay identical.
+    const { paymentDetail, cardData } = buildBookingSnapshots(trip, calc, {
+      batchIndex: Number(batchIndex) || 0,
+      partialAllowed, // server's verdict for this batch
+    });
 
     await Bookings.create({
       userId: `${userId}`,
@@ -304,14 +359,25 @@ export const finalizeBookingPaid = async (booking, opts = {}) => {
     console.error("booking contact backfill failed:", e?.message || e);
   }
 
-  // Invoice number: assigned exactly once, only after a VERIFIED payment.
+  // Invoice number: assigned exactly once, only after a VERIFIED payment AND only
+  // when the booking snapshot reconciles. A blank/zeroed snapshot (the import
+  // incident) must NOT burn an FY invoice number — issuance is blocked and the
+  // row is flagged for ops. The captured payment still stands; the booking is
+  // confirmed; only the tax document waits for a complete snapshot.
   if (!booking.invoiceNumber) {
-    try {
-      const { nextInvoiceNumber } = await import("../utils/invoiceNumber.js");
-      booking.invoiceNumber = await nextInvoiceNumber();
-      booking.invoiceDate = new Date();
-    } catch (invErr) {
-      console.error("invoice number assignment failed:", invErr?.message || invErr);
+    const gate = isInvoiceIssuable(booking);
+    if (!gate.ok) {
+      booking.invoiceBlockedReason = gate.reason;
+      console.warn(`invoice issuance BLOCKED for booking ${booking.bookingId || booking._id}: ${gate.reason}`);
+    } else {
+      booking.invoiceBlockedReason = undefined;
+      try {
+        const { nextInvoiceNumber } = await import("../utils/invoiceNumber.js");
+        booking.invoiceNumber = await nextInvoiceNumber();
+        booking.invoiceDate = new Date();
+      } catch (invErr) {
+        console.error("invoice number assignment failed:", invErr?.message || invErr);
+      }
     }
   }
   await booking.save();
@@ -721,9 +787,15 @@ export const downloadInvoice = async (req, res) => {
     if (!["firstPayment", "fullPayment"].includes(booking.paymentStatus)) {
       return res.status(400).json({ error: "No invoice — booking is not paid" });
     }
-    // Legacy paid bookings predating the invoice system: assign a number now.
+    // Legacy paid bookings predating the invoice system: assign a number now —
+    // but ONLY if the snapshot reconciles. A blank/zeroed booking (import
+    // incident) must not burn an FY number on download either.
     const { nextInvoiceNumber, invoiceFileName } = await import("../utils/invoiceNumber.js");
     if (!booking.invoiceNumber) {
+      const gate = isInvoiceIssuable(booking);
+      if (!gate.ok) {
+        return res.status(409).json({ error: `Invoice cannot be issued: ${gate.reason}`, code: "INVOICE_NOT_RECONCILED" });
+      }
       booking.invoiceNumber = await nextInvoiceNumber();
       booking.invoiceDate = new Date();
       await booking.save();

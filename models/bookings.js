@@ -92,6 +92,10 @@ const userSchema = mongoose.Schema({
   paymentLinkShortUrl: { type: String, required: false },
   // Razorpay payment-link lifecycle: created | paid | partially_paid | cancelled | expired.
   paymentLinkStatus: { type: String, required: false },
+  // Set when invoice issuance was BLOCKED at finalize time because the booking
+  // snapshot did not reconcile (empty line items, or subtotal+GST ≠ grand total).
+  // The payment still stands; no FY invoice number is consumed. Ops review needed.
+  invoiceBlockedReason: { type: String, required: false },
 });
 
 userSchema.index({ razorpayOrderId: 1 }, { sparse: true });

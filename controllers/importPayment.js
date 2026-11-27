@@ -20,7 +20,7 @@
 import Razorpay from "razorpay";
 import { Bookings, Trips, User } from "../models/index.js";
 import { keysForMode } from "../services/paymentAvailability.js";
-import { computeTripAmount, finalizeBookingPaid } from "./Order.js";
+import { computeTripAmount, finalizeBookingPaid, buildBookingSnapshots } from "./Order.js";
 
 // ── Pure helpers (exported for unit tests; no DB, no network) ─────────────────
 
@@ -209,7 +209,7 @@ export const confirmImportPayment = async (req, res) => {
 
     const [customer, trip] = await Promise.all([
       User.findById(userId).select("name email phone role").lean(),
-      Trips.findById(tripId).lean(),
+      Trips.findById(tripId).populate("host").lean(), // host needed for the invoice snapshot
     ]);
     if (!customer) return res.status(404).json({ error: "Customer not found" });
     if (!trip) return res.status(404).json({ error: "Trip not found" });
@@ -232,14 +232,17 @@ export const confirmImportPayment = async (req, res) => {
       });
     }
 
+    // Build the SAME denormalized snapshots a website booking carries, so the
+    // admin list, booking detail and invoice render the real trip/traveller/batch
+    // data instead of blanks (the incident root cause). firstPayment imports keep
+    // the "pay balance" affordance; full imports do not.
+    const { paymentDetail, cardData, batchDate } = buildBookingSnapshots(trip, calc, {
+      batchIndex: Number(batchIndex) || 0,
+      partialAllowed: amt.paymentType === "firstPayment",
+    });
+
     // Build the booking as an "imported" source row. DateOfBooking preserves the
     // ORIGINAL capture time; importedAt is the separate audit timestamp.
-    let batchDate;
-    try {
-      const sd = JSON.parse(trip.selectDate || "[]");
-      batchDate = sd?.[Number(batchIndex) || 0]?.BatchDate;
-    } catch { /* noop */ }
-
     const booking = await Bookings.create({
       userId: `${userId}`,
       bookingId: payment.id, // imported bookings are keyed by the real payment id
@@ -258,6 +261,8 @@ export const confirmImportPayment = async (req, res) => {
       batchIndex: Number(batchIndex) || 0,
       travellersCount: calc.travellers,
       batchDate: batchDate ? `${batchDate}` : undefined,
+      paymentDetail: JSON.stringify(paymentDetail),
+      cardData: JSON.stringify(cardData),
       userName: customer.name || "",
       email: customer.email || "",
       phone: customer.phone || "",
