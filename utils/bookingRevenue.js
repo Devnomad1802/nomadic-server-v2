@@ -15,6 +15,33 @@ export const isEarningBooking = (b) => {
   return EARNING_PAYMENT.has(ps);
 };
 
+// A booking that was once confirmed but is now cancelled/refunded/failed.
+// Belongs in "cancelled history" — NOT in upcoming/completed, NOT in revenue.
+export const isDeadBooking = (b) => {
+  const ps = String(b?.paymentStatus ?? "").toLowerCase();
+  const st = String(b?.status ?? "").toLowerCase();
+  return DEAD.has(ps) || DEAD.has(st);
+};
+
+// Real booking of any kind (confirmed OR a previously-confirmed cancellation).
+// Excludes pure checkout attempts (paymentStatus "created"/empty, never paid),
+// which must never surface to a host as a booking.
+export const isRealBooking = (b) => isEarningBooking(b) || isDeadBooking(b);
+
+// Canonical payment label for a host-facing row. Never guesses "full".
+//   "full"     → fully paid
+//   "partial"  → advance/first payment only
+//   "refunded" → money returned
+//   "pending"  → real-but-not-yet-earning edge (should be rare post-filter)
+export const paymentStateOf = (b) => {
+  const ps = String(b?.paymentStatus ?? "").toLowerCase();
+  const st = String(b?.status ?? "").toLowerCase();
+  if (ps.includes("refund") || st.includes("refund")) return "refunded";
+  if (ps === "firstpayment" || ps.includes("partial")) return "partial";
+  if (EARNING_PAYMENT.has(ps)) return "full";
+  return "pending";
+};
+
 // Sum of `total` across earning bookings only.
 export const earningRevenue = (bookings = []) =>
   bookings.filter(isEarningBooking).reduce((s, b) => s + (Number(b.total) || 0), 0);
