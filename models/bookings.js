@@ -73,9 +73,32 @@ const userSchema = mongoose.Schema({
   balanceAmount: { type: Number, required: false },
 
   payoutId: { type: mongoose.Schema.Types.ObjectId, ref: 'Payout', required: false },
+
+  // ── Booking origin / assisted-booking provenance (additive, back-compat) ──
+  // Where this booking came from. Legacy + website rows have no value →
+  // treated as "website". "admin_assisted" = created by staff via a payment
+  // link; "imported" = an already-captured Razorpay payment attached by an
+  // admin (no new charge). Defaulting is intentional: NOT required, so every
+  // existing row keeps working unchanged.
+  source: { type: String, enum: ["website", "admin_assisted", "imported"], required: false },
+  // Admin actor who created an assisted/imported booking (audit trail).
+  assistedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: false },
+  // When an existing payment was imported (audit timestamp), kept SEPARATE from
+  // the original payment time (DateOfBooking preserves the real capture date).
+  importedAt: { type: Date, required: false },
+  // Razorpay Payment Link provenance (assisted flow) — persisted when a link is
+  // generated server-side so status/reconcile never guesses.
+  paymentLinkId: { type: String, required: false },
+  paymentLinkShortUrl: { type: String, required: false },
 });
 
 userSchema.index({ razorpayOrderId: 1 }, { sparse: true });
 userSchema.index({ balanceOrderId: 1 }, { sparse: true });
+// Dedupe/lookup index for imported & assisted payments. NON-UNIQUE for now:
+// a UNIQUE constraint is deferred until a read-only dry-run
+// (scripts/import-dedupe-dryrun.mjs) confirms the production collection has no
+// existing duplicate razorpayPaymentId values. Application-level dedupe in
+// controllers/importPayment.js guards duplicate allocation in the meantime.
+userSchema.index({ razorpayPaymentId: 1 }, { sparse: true });
 
 export const Bookings = mongoose.model("Bookings", userSchema);
