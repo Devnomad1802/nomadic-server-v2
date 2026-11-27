@@ -44,7 +44,7 @@ const invoiceAttachment = async (booking, user) => {
 
 // Flatten a Trip.discount field (array of strings, sometimes JSON like '["CODE"]')
 // into a flat list of coupon codes.
-const couponCodes = (trip) => {
+export const couponCodes = (trip) => {
   const out = [];
   (Array.isArray(trip?.discount) ? trip.discount : []).forEach((d) => {
     try {
@@ -60,7 +60,7 @@ const couponCodes = (trip) => {
 
 // Recompute the price from the DB trip + the user's selections.
 // Mirrors the client math but is the single source of truth.
-const computeTripAmount = (trip, quantities, couponCode) => {
+export const computeTripAmount = (trip, quantities, couponCode) => {
   let sections = [];
   try { sections = JSON.parse(trip?.addsection || "[]"); } catch { sections = []; }
   const q = quantities && typeof quantities === "object" ? quantities : {};

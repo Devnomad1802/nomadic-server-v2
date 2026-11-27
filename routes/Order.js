@@ -2,6 +2,8 @@ import { Router } from "express";
 import { catchAsync } from "../middlewares/index.js";
 import { paymentGate } from "../middlewares/paymentGate.js";
 import { order, validate, createSecureOrder, confirmBooking, createBalanceOrder, confirmBalancePayment, downloadInvoice, reconcilePayment } from "../controllers/Order.js";
+import { previewImportPayment, confirmImportPayment } from "../controllers/importPayment.js";
+import { isAdmin } from "../middlewares/isAdmin.js";
 import passport from "passport";
 
 export const OrderRoute = Router();
@@ -25,6 +27,14 @@ OrderRoute.get("/payment/reconcile/:orderId", auth, catchAsync(reconcilePayment)
 
 // Invoice PDF (owner or Admin) — always the latest saved booking state.
 OrderRoute.get("/invoice/:bookingId", auth, catchAsync(downloadInvoice));
+
+// ── Import Existing Payment (Admin-only) — directive §5 ──
+// Attach an already-captured Razorpay payment to a booking without a new charge.
+// preview = read-only dry-run (masked evidence + expected-vs-received);
+// confirm = create "imported" booking + finalize once. NOT payment-gated: they
+// resolve an EXISTING payment and never initiate one.
+OrderRoute.post("/admin/import-payment/preview", isAdmin, catchAsync(previewImportPayment));
+OrderRoute.post("/admin/import-payment/confirm", isAdmin, catchAsync(confirmImportPayment));
 
 // ── Legacy endpoints (kept temporarily for the currently-deployed client). ──
 // TODO: remove once the new client is live everywhere.
